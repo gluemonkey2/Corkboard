@@ -12,9 +12,16 @@ if ! command -v node >/dev/null 2>&1; then
   finish 1
 fi
 
-if [ ! -d node_modules/electron/dist ]; then
+if [ ! -f node_modules/electron/install.js ]; then
   echo "Getting the packages that Corkboard needs. This can take some minutes..."
   npm install || { echo "npm could not get the packages. Make sure that this computer has a connection to the internet."; finish 1; }
+fi
+# New versions of npm do not run the install script of a package. Electron gets its program with that script,
+# so run it here.
+if [ ! -d node_modules/electron/dist ]; then
+  echo "Getting the Electron program..."
+  node node_modules/electron/install.js
+  [ -d node_modules/electron/dist ] || { echo "The Electron program did not come. Make sure that this computer has a connection to the internet."; finish 1; }
 fi
 
 if bash tools/deploy/install.sh; then

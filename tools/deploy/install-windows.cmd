@@ -8,9 +8,18 @@ where node >nul 2>nul
 if errorlevel 1 goto nonode
 
 if exist "node_modules\electron\dist" goto install
+if exist "node_modules\electron\install.js" goto electron
 echo Getting the packages that Corkboard needs. This can take some minutes...
 call npm install
 if errorlevel 1 goto nopackages
+
+:electron
+rem New versions of npm do not run the install script of a package. Electron gets its program with that
+rem script, so run it here.
+if exist "node_modules\electron\dist" goto install
+echo Getting the Electron program...
+node "node_modules\electron\install.js"
+if not exist "node_modules\electron\dist" goto noelectron
 
 :install
 node "tools\deploy\windows.js" install
@@ -28,6 +37,11 @@ exit /b 1
 
 :nopackages
 echo npm could not get the packages. Make sure that this computer has a connection to the internet.
+pause
+exit /b 1
+
+:noelectron
+echo The Electron program did not come. Make sure that this computer has a connection to the internet.
 pause
 exit /b 1
 

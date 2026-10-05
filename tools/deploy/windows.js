@@ -152,7 +152,14 @@ async function update(dev, { restart = true } = {}) {
 async function install(dev) {
   if (!WIN && !env.CORKBOARD_INSTALL_HOME) throw new Error('This installer is for Windows. On macOS, run: bash tools/deploy/install.sh');
   const electron = path.join(dev, 'node_modules', 'electron', 'dist');
-  if (!(await exists(electron))) throw new Error('Electron is not there. Run "npm install" in the project folder first.');
+  // New versions of npm do not run the install script of a package, so the Electron program can be absent
+  // after "npm install". The script of Electron gets it.
+  const getElectron = path.join(dev, 'node_modules', 'electron', 'install.js');
+  if (!(await exists(electron)) && (await exists(getElectron))) {
+    log('Getting the Electron program...');
+    spawnSync(process.execPath, [getElectron], { cwd: path.dirname(getElectron), stdio: 'inherit', windowsHide: true });
+  }
+  if (!(await exists(electron))) throw new Error('Electron is not there. Run "npm install" in the project folder, then run this install again.');
   await stopApp();
   await fsp.mkdir(path.join(APP, 'bin'), { recursive: true });
   await fsp.mkdir(path.join(APP, 'logs'), { recursive: true });
