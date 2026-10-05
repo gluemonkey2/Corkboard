@@ -115,8 +115,20 @@ The install does the same work as `install.sh` does on a Mac:
 - The program goes to `%LOCALAPPDATA%\Programs\Corkboard\Corkboard.exe`.
 - The code, the data and the logs go to `%APPDATA%\Corkboard` (folders `app`, `data` and `logs`). The first install copies the data of the project folder, when it has data.
 - The Desktop gets **Corkboard** and **Update Corkboard**. The Start menu gets **Corkboard**.
-- **Update Corkboard** copies the code from the project folder, tests it on a spare port, and then replaces the installed code. It stops the app for the change and starts it again. If the test fails, nothing changes. Data is never touched.
-- Run the install again only after a change to `electron/shell`, the icon or the Electron version.
+- **Update Corkboard** does the whole update. It gets the newest code from GitHub (it needs no git and no account), tests it on a spare port, and then replaces the installed code. It stops the app for the change and starts it again. If the download or the test fails, nothing changes. Data is never touched. When GitHub has no new code, it says so.
+- The download uses Node.js first. If a proxy or a certificate of an office network stops Node.js, the download uses `curl`, which uses the Windows settings.
+- On a computer where you change the code yourself, run `node tools\deploy\windows.js update --local` one time. Then the updates use the project folder. `update --github` changes that back.
+- Run the install again only after a change to `electron/shell`, the icon or the Electron version. The update tells you when the Electron version changed.
+
+An install from before this change has an update shortcut that still uses the project folder. To move it to the new method, run these two commands one time, in a terminal in any folder:
+
+```bat
+curl.exe -L -o corkboard-windows.js https://raw.githubusercontent.com/gluemonkey2/Corkboard/main/tools/deploy/windows.js
+```
+
+```bat
+node corkboard-windows.js update --github
+```
 
 Differences on Windows:
 
