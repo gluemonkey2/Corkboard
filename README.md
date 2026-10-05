@@ -72,9 +72,18 @@ npm start
 - **Gravity**: press G. Linked cards pull together, cards push apart, and cards of the same colour gather. Undo returns the layout from before.
 - **Two screens**: Options → open the other view in a new window. The two windows stay in sync. If a window holds an old copy of a board, the server refuses its save and the window reloads the board. A window cannot re-create a deleted board.
 
+## Install with a Desktop shortcut
+
+The project folder has one installer file for each system. Each one needs [Node.js](https://nodejs.org) (the LTS version) and a connection to the internet for the first run.
+
+- **macOS:** double-click `Install Corkboard.command` in the Finder.
+- **Windows:** double-click `Install Corkboard.cmd`.
+
+The installer gets the packages (`npm install`) when they are not there. Then it installs Corkboard as a desktop app and puts two shortcuts on the Desktop: **Corkboard** and **Update Corkboard**. The two sections below give the details for each system.
+
 ## Installed copy
 
-`tools/deploy/install.sh` installs Corkboard as a desktop app (Electron) for daily use:
+`tools/deploy/install.sh` installs Corkboard as a desktop app (Electron) for daily use (`Install Corkboard.command` runs it):
 
 - `~/Applications/Corkboard.app` is a small launcher. It loads the code from `~/Library/Application Support/Corkboard/app`, runs the server inside the app (port 4848), and shows Corkboard in its own window.
 - The data is in `~/Library/Application Support/Corkboard/data`. The first install copies the dev data once. After that the two copies do not share data.
@@ -98,10 +107,7 @@ Corkboard runs on Windows 10 and Windows 11. It needs [Node.js](https://nodejs.o
 
 To use it in the browser, do the steps of **Start** above in a terminal (PowerShell or Command Prompt). The commands are the same.
 
-To install it as a desktop app:
-
-1. Open a terminal in the project folder and run `npm install`.
-2. Double-click `tools\deploy\install-windows.cmd` (or run `node tools\deploy\windows.js install`).
+To install it as a desktop app, double-click `Install Corkboard.cmd` in the project folder. It runs `tools\deploy\install-windows.cmd`, which gets the packages when they are not there and then runs `node tools\deploy\windows.js install`.
 
 The install does the same work as `install.sh` does on a Mac:
 
