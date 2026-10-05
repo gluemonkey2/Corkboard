@@ -79,7 +79,7 @@ The project folder has one installer file for each system. Each one needs [Node.
 - **macOS:** double-click `Install Corkboard.command` in the Finder.
 - **Windows:** double-click `Install Corkboard.cmd`.
 
-The installer gets the packages (`npm install`) when they are not there. Then it installs Corkboard as a desktop app and puts two shortcuts on the Desktop: **Corkboard** and **Update Corkboard**. The two sections below give the details for each system.
+The installer gets the packages (`npm install`) when they are not there. It also gets the Electron program: new versions of npm do not run the install script of Electron, so `node_modules/electron/dist` can be absent after `npm install`. To get it by hand, run `node node_modules/electron/install.js`. Then it installs Corkboard as a desktop app and puts two shortcuts on the Desktop: **Corkboard** and **Update Corkboard**. The two sections below give the details for each system.
 
 ## Installed copy
 
