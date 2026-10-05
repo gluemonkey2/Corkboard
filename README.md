@@ -80,7 +80,10 @@ The project folder has one installer file for each system. Each one needs [Node.
 - **macOS:** double-click `Install Corkboard.command` in the Finder.
 - **Windows:** double-click `Install Corkboard.cmd`.
 
-The installer gets the packages (`npm install`) when they are not there. It also gets the Electron program: new versions of npm do not run the install script of Electron, so `node_modules/electron/dist` can be absent after `npm install`. To get it by hand, run `node node_modules/electron/install.js`. Then it installs Corkboard as a desktop app and puts two shortcuts on the Desktop: **Corkboard** and **Update Corkboard**. The two sections below give the details for each system.
+The installer gets what it needs, installs Corkboard as a desktop app, and puts two shortcuts on the Desktop: **Corkboard** and **Update Corkboard**. The two sections below give the details for each system.
+
+- **macOS:** the installer runs `npm install` when the packages are not there. It also gets the Electron program: new versions of npm do not run the install script of Electron, so `node_modules/electron/dist` can be absent after `npm install`. To get it by hand, run `node node_modules/electron/install.js`.
+- **Windows:** the installer needs Node.js only. It does not use npm or git. It gets the packages and the Electron program itself.
 
 ## Installed copy
 
@@ -108,7 +111,22 @@ Corkboard runs on Windows 10 and Windows 11. It needs [Node.js](https://nodejs.o
 
 To use it in the browser, do the steps of **Start** above in a terminal (PowerShell or Command Prompt). The commands are the same.
 
-To install it as a desktop app, double-click `Install Corkboard.cmd` in the project folder. It runs `tools\deploy\install-windows.cmd`, which gets the packages when they are not there and then runs `node tools\deploy\windows.js install`.
+To install it as a desktop app, double-click `Install Corkboard.cmd` in the project folder. It runs `node tools\deploy\windows.js install`.
+
+You can also install with no project folder. These two commands, in a terminal in any folder, get the install script and run it. The script then gets the code from GitHub:
+
+```bat
+curl.exe -L -o corkboard-windows.js https://raw.githubusercontent.com/gluemonkey2/Corkboard/main/tools/deploy/windows.js
+```
+
+```bat
+node corkboard-windows.js install
+```
+
+The install needs Node.js only (the `node` command). It does not use `npm` or `git`:
+
+- The packages that the app needs come from the addresses in `package-lock.json`, and each one is checked with its checksum from that file. When this Node.js has npm, the script uses npm first.
+- The Electron program comes from the Electron page on GitHub (about 120 MB), in the version of `package-lock.json`. The script checks it with the checksum list of Electron. When the project folder has `node_modules/electron/dist`, the script uses that.
 
 The install does the same work as `install.sh` does on a Mac:
 
@@ -120,15 +138,7 @@ The install does the same work as `install.sh` does on a Mac:
 - On a computer where you change the code yourself, run `node tools\deploy\windows.js update --local` one time. Then the updates use the project folder. `update --github` changes that back.
 - Run the install again only after a change to `electron/shell`, the icon or the Electron version. The update tells you when the Electron version changed.
 
-An install from before this change has an update shortcut that still uses the project folder. To move it to the new method, run these two commands one time, in a terminal in any folder:
-
-```bat
-curl.exe -L -o corkboard-windows.js https://raw.githubusercontent.com/gluemonkey2/Corkboard/main/tools/deploy/windows.js
-```
-
-```bat
-node corkboard-windows.js update --github
-```
+An install from before these changes has an update shortcut that still uses the project folder and npm. To move it to the new method, run the two install commands above one time. The data stays.
 
 Differences on Windows:
 

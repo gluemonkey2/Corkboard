@@ -1,7 +1,8 @@
 // Corkboard on Windows: install the desktop app, and update it.
 //   node tools\deploy\windows.js install     (or double-click "Install Corkboard.cmd")
 //   node tools\deploy\windows.js update      (the "Update Corkboard" shortcut on the Desktop does this)
-// It is the Windows form of install.sh and corkboard-update.sh. It needs Node.js.
+// It is the Windows form of install.sh and corkboard-update.sh. It needs Node.js only: no npm and no git.
+// The script also works alone, with no project folder: then the install gets the code from GitHub.
 //
 //   Code and data:  %APPDATA%\Corkboard          (app = the code, data = your boards and PDFs, logs)
 //   The program:    %LOCALAPPDATA%\Programs\Corkboard\Corkboard.exe
@@ -110,14 +111,14 @@ function httpsGet(url, hops = 5) {
         res.resume();
         return resolve(httpsGet(new URL(res.headers.location, url).href, hops - 1));
       }
-      if (res.statusCode !== 200) { res.resume(); return reject(new Error(`GitHub answered ${res.statusCode}.`)); }
+      if (res.statusCode !== 200) { res.resume(); return reject(new Error(`The server answered ${res.statusCode}.`)); }
       const parts = [];
       res.on('data', (c) => parts.push(c));
       res.on('end', () => resolve(Buffer.concat(parts)));
       res.on('error', reject);
     });
     req.on('error', reject);
-    req.on('timeout', () => req.destroy(new Error('GitHub did not answer in time.')));
+    req.on('timeout', () => req.destroy(new Error('The server did not answer in time.')));
   });
 }
 // The download: Node first. On an office network, Node can be stopped by a proxy or by a certificate that only
@@ -133,6 +134,88 @@ async function download(url) {
     return await fsp.readFile(file);
   } finally { await fsp.rm(file, { force: true }).catch(() => {}); }
 }
+// A large download, to a file: Node first, then curl (see download()).
+function httpsToFile(url, file, hops = 5) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, { headers: { 'User-Agent': 'corkboard-update' }, timeout: 30000 }, (res) => {
+      if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location && hops > 0) {
+        res.resume();
+        return resolve(httpsToFile(new URL(res.headers.location, url).href, file, hops - 1));
+      }
+      if (res.statusCode !== 200) { res.resume(); return reject(new Error(`The server answered ${res.statusCode}.`)); }
+      const out = fs.createWriteStream(file);
+      res.pipe(out);
+      out.on('finish', () => out.close(() => resolve()));
+      out.on('error', reject);
+      res.on('error', reject);
+    });
+    req.on('error', reject);
+    req.on('timeout', () => req.destroy(new Error('The server did not answer in time.')));
+  });
+}
+async function downloadTo(url, file) {
+  if (!env.CORKBOARD_FORCE_CURL) {
+    try { return await httpsToFile(url, file); } catch (e) { log(`Node could not get the file (${e.message}). Now with curl...`); }
+  }
+  const r = spawnSync(WIN ? 'curl.exe' : 'curl', ['-fsSL', '--max-time', '900', '-o', file, url], { encoding: 'utf8', windowsHide: true });
+  if (r.status !== 0) throw new Error(`The download failed. ${(r.stderr || '').trim()}`);
+}
+const hashFile = (file, kind) => new Promise((resolve, reject) => {
+  const h = crypto.createHash(kind);
+  fs.createReadStream(file).on('data', (c) => h.update(c)).on('end', () => resolve(h)).on('error', reject);
+});
+
+// ---------- packages and the Electron program, with no npm ----------
+// The npm program of this Node.js, when it has one. (The "npm" command is not on the PATH of every computer.)
+function npmCli() {
+  const dir = path.dirname(process.execPath);
+  return [path.join(dir, 'node_modules', 'npm', 'bin', 'npm-cli.js'), path.join(dir, '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js')].find((f) => fs.existsSync(f)) || null;
+}
+// Install the packages that the app needs when it runs (not the ones for development) into dir/node_modules.
+// With npm when this Node.js has it. Else each package comes from the address in package-lock.json, and its
+// checksum from that file is checked.
+async function installPackages(dir) {
+  const cli = env.CORKBOARD_NO_NPM ? null : npmCli();
+  if (cli) {
+    const r = spawnSync(process.execPath, [cli, 'ci', '--omit=dev', '--no-audit', '--no-fund'], { cwd: dir, encoding: 'utf8', windowsHide: true });
+    if (r.status === 0) return;
+    log(`npm did not install the packages. ${(r.stderr || r.stdout || '').trim().slice(0, 400)} Now with a direct download...`);
+  }
+  const lock = JSON.parse(await fsp.readFile(path.join(dir, 'package-lock.json'), 'utf8'));
+  for (const [key, p] of Object.entries(lock.packages || {})) {
+    if (!key.startsWith('node_modules/') || p.dev || p.optional || p.devOptional || !p.resolved) continue;
+    const gz = await download(p.resolved);
+    const [kind, want] = String(p.integrity || '').split('-');
+    if (!want || crypto.createHash(kind).update(gz).digest('base64') !== want) throw new Error(`The package ${key.slice(13)} did not pass its check.`);
+    await untar(gz, path.join(dir, ...key.split('/')));
+    log(`Package ${key.slice(13)} ${p.version}: from ${new URL(p.resolved).host}`);
+  }
+}
+// Put the Electron program into the folder `to`. From the project folder when "npm install" put it there. Else
+// from the Electron page on GitHub: the version of package-lock.json, checked with the checksum list of Electron.
+async function getProgram(dev, to) {
+  const local = path.join(dev, 'node_modules', 'electron', 'dist');
+  await retry(() => fsp.rm(to, { recursive: true, force: true }));
+  await fsp.mkdir(to, { recursive: true });
+  if (!env.CORKBOARD_FORCE_DOWNLOAD && (await exists(local))) return fsp.cp(local, to, { recursive: true });
+  const lock = JSON.parse(await fsp.readFile(path.join(dev, 'package-lock.json'), 'utf8'));
+  const version = lock.packages?.['node_modules/electron']?.version;
+  if (!version) throw new Error('The version of Electron is not in package-lock.json.');
+  const name = `electron-v${version}-${process.platform}-${process.arch}.zip`, base = `https://github.com/electron/electron/releases/download/v${version}`;
+  const zip = path.join(os.tmpdir(), `corkboard-${process.pid}-${name}`);
+  try {
+    log(`Getting the Electron program (${name}, about 120 MB)...`);
+    await downloadTo(`${base}/${name}`, zip);
+    const sums = (await download(`${base}/SHASUMS256.txt`)).toString('utf8');
+    const want = sums.split('\n').map((l) => l.trim().split(/\s+\*?/)).find((x) => x[1] === name)?.[0];
+    if (!want || (await hashFile(zip, 'sha256')).digest('hex') !== want) throw new Error('The Electron program did not pass its check.');
+    // Windows 10 and 11, macOS and Linux have a tar that reads .zip files. Windows has PowerShell as a second method.
+    let r = spawnSync(WIN ? 'tar.exe' : 'tar', ['-xf', zip, '-C', to], { encoding: 'utf8', windowsHide: true });
+    if (r.status !== 0 && WIN) r = powershell(`Expand-Archive -LiteralPath ${quote(zip)} -DestinationPath ${quote(to)} -Force`);
+    if (r.status !== 0) throw new Error(`The Electron program could not be unpacked. ${(r.stderr || '').trim().slice(0, 300)}`);
+  } finally { await fsp.rm(zip, { force: true }).catch(() => {}); }
+}
+
 // Write the files of a .tar.gz into a folder. The first folder of each path (Corkboard-main/) is left out.
 async function untar(gz, dest) {
   const buf = zlib.gunzipSync(gz), root = path.resolve(dest);
@@ -238,8 +321,7 @@ async function update(dev, { restart = true, source = 'folder', force = false } 
     && (await sameFile(path.join(dev, 'package-lock.json'), path.join(now, 'package-lock.json')));
   if (samePackages) await fsp.cp(path.join(now, 'node_modules'), path.join(next, 'node_modules'), { recursive: true });
   else {
-    const npm = spawnSync('npm ci --omit=dev --no-audit --no-fund', { cwd: next, shell: true, encoding: 'utf8', windowsHide: true });
-    if (npm.status !== 0) { log(npm.stderr || npm.stdout || ''); return fail('npm could not install the packages.'); }
+    try { await installPackages(next); } catch (e) { return fail(`The packages did not install. ${e.message}`); }
   }
   for (const f of ['server.js', path.join('electron', 'main.js')]) {
     if (spawnSync(process.execPath, ['--check', path.join(next, f)], { windowsHide: true }).status !== 0) return fail('The code has a syntax error.');
@@ -274,24 +356,26 @@ async function update(dev, { restart = true, source = 'folder', force = false } 
 // ---------- install ----------
 async function install(dev, { source = 'github' } = {}) {
   if (!WIN && !env.CORKBOARD_INSTALL_HOME) throw new Error('This installer is for Windows. On macOS, run: bash tools/deploy/install.sh');
-  const electron = path.join(dev, 'node_modules', 'electron', 'dist');
-  // New versions of npm do not run the install script of a package, so the Electron program can be absent
-  // after "npm install". The script of Electron gets it.
-  const getElectron = path.join(dev, 'node_modules', 'electron', 'install.js');
-  if (!(await exists(electron)) && (await exists(getElectron))) {
-    log('Getting the Electron program...');
-    spawnSync(process.execPath, [getElectron], { cwd: path.dirname(getElectron), stdio: 'inherit', windowsHide: true });
+  // This script alone, with no project folder around it: the code comes from GitHub.
+  let temp = null;
+  if (!(await exists(path.join(dev, 'server.js')))) {
+    log(`Getting the code from GitHub (${REPO})...`);
+    ({ dir: temp } = await fromGitHub(REPO, BRANCH));
+    dev = temp;
   }
-  if (!(await exists(electron))) throw new Error('Electron is not there. Run "npm install" in the project folder, then run this install again.');
+  try { await installFrom(dev, source, !!temp); } finally { if (temp) await fsp.rm(temp, { recursive: true, force: true }).catch(() => {}); }
+}
+async function installFrom(dev, source, fetched) {
   await stopApp();
   await fsp.mkdir(path.join(APP, 'bin'), { recursive: true });
   await fsp.mkdir(path.join(APP, 'logs'), { recursive: true });
   // The update shortcut uses its own copy of this script, so a fault in the project folder can not stop an update.
-  await fsp.copyFile(__filename, path.join(APP, 'bin', 'corkboard-windows.js'));
+  await fsp.copyFile(path.join(dev, 'tools', 'deploy', 'windows.js'), path.join(APP, 'bin', 'corkboard-windows.js'));
   await fsp.copyFile(path.join(dev, 'electron', 'icon', 'Corkboard.ico'), path.join(APP, 'bin', 'Corkboard.ico'));
   let wantElectron = null;
   try { wantElectron = JSON.parse(await fsp.readFile(path.join(dev, 'package.json'), 'utf8')).devDependencies?.electron || null; } catch { /* not known */ }
-  await writeConfig({ dev, node: process.execPath, source, electron: wantElectron });
+  // dev: the project folder, for "update --local". Code that came from GitHub for this install has none.
+  await writeConfig({ dev: fetched ? null : dev, node: process.execPath, source, electron: wantElectron });
 
   // First install: the installed data starts as a copy of the data of the project folder, when it has data.
   if (!(await exists(path.join(APP, 'data')))) {
@@ -307,9 +391,7 @@ async function install(dev, { source = 'github' } = {}) {
 
   // The program: Electron with a small launcher in it. The launcher loads the installed code, so an update
   // replaces only the code.
-  await retry(() => fsp.rm(PROG, { recursive: true, force: true }));
-  await fsp.mkdir(path.dirname(PROG), { recursive: true });
-  await fsp.cp(electron, PROG, { recursive: true });
+  await getProgram(dev, PROG);
   if (await exists(path.join(PROG, 'electron.exe'))) await retry(() => fsp.rename(path.join(PROG, 'electron.exe'), EXE));
   await fsp.rm(path.join(PROG, 'resources', 'default_app.asar'), { force: true });
   await fsp.cp(path.join(dev, 'electron', 'shell'), path.join(PROG, 'resources', 'app'), { recursive: true });
