@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Corkboard</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='3' y='5' width='11' height='9' rx='2' fill='%23e0573a'/><rect x='18' y='18' width='11' height='9' rx='2' fill='%232f7de1'/><path d='M14 10 C 22 10, 16 22, 18 22' stroke='%23555' stroke-width='2' fill='none'/></svg>">
+<script src="/theme.js"></script>
+<link rel="stylesheet" href="/vendor/docedit/docedit.css">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body data-view="projects">
+<header id="topbar">
+  <div class="seg" id="views">
+    <button data-view="projects" title="All projects">Projects</button>
+    <button data-view="read" title="Read PDFs and make snippets">Read</button>
+    <button data-view="board" title="Sort snippets on a whiteboard">Board</button>
+  </div>
+  <button id="projName" class="proj-name" title="Back to all projects" hidden></button>
+  <span class="sep"></span>
+  <div class="ctx for-projects">
+    <input id="projFilter" type="search" placeholder="Filter…" autocomplete="off">
+    <button id="newProject" title="Start a new project">＋ New project</button>
+  </div>
+  <div class="ctx for-read">
+    <button id="backBtn" class="btn" hidden title="Back to the PDF you came from">← Back</button>
+    <button id="filesBtn" class="btn" title="The files of this project, in folders that you make">▤ Files</button>
+    <select id="pdfSelect" title="Open a PDF from your library"></select>
+    <button id="addPdfBtn" class="btn" title="Add PDFs, web pages, images or text files, or PDFs from the library">＋ Add</button>
+    <button id="removePdfBtn" class="btn" title="Remove the open PDF from this project, or delete it">✕ Remove</button>
+  </div>
+  <div class="ctx for-board">
+    <select id="boardSelect" title="Switch whiteboard"></select>
+    <button id="newBoard" title="New whiteboard">＋</button>
+    <input id="search" type="search" placeholder="Search board…" autocomplete="off">
+  </div>
+  <span class="spacer"></span>
+  <span id="status"></span>
+  <button id="gravityStop" hidden title="Stop gravity (G)">● Gravity on · Stop</button>
+  <div class="opt-wrap">
+    <button id="optionsBtn" aria-haspopup="menu" aria-expanded="false">Options ▾</button>
+    <div id="optionsMenu" class="menu" role="menu" hidden>
+      <div class="menu-sec for-read for-board">
+        <div class="menu-title">Project</div>
+        <button data-act="rename-project">Rename project…</button>
+        <button data-act="remove-pdf" class="for-read">Remove or delete this PDF…</button>
+        <button data-act="skip-running" class="for-read" id="skipRunningItem" title="Leave repeated page headers and footers (page numbers, report IDs) out of text selections, so a snippet can cross a page">Skip headers and footers in snippets</button>
+      </div>
+      <div class="menu-sec for-board">
+        <div class="menu-title">Board</div>
+        <button data-act="rename">Rename board…</button>
+        <button data-act="delete" class="danger">Move board to trash…</button>
+      </div>
+      <div class="menu-sec for-board">
+        <div class="menu-title">Export</div>
+        <button data-act="export">HTML file, with source PDFs</button>
+        <button data-act="export-lite">HTML file, without PDFs (smaller)</button>
+      </div>
+      <div class="menu-sec for-board">
+        <div class="menu-title">Arrange</div>
+        <button data-act="structure">Structured layout <kbd>L</kbd></button>
+        <button data-act="group-doc">Group by document</button>
+        <button data-act="group-new">New group</button>
+        <button data-act="move-highlights" title="Take the word highlights on this board's cards out of the PDFs. They stay on their cards.">Highlights only on the cards…</button>
+        <button data-act="gravity" id="gravityItem">Gravity <kbd>G</kbd></button>
+        <div class="menu-hint">Both act on the visible cards. <kbd>⌘Z</kbd> undoes either one.</div>
+      </div>
+      <div class="menu-sec for-board">
+        <div class="menu-title">Arrows</div>
+        <label><input type="radio" name="arrowStyle" value="curved"> Curved</label>
+        <label><input type="radio" name="arrowStyle" value="circuit"> Circuit (90° turns)</label>
+      </div>
+      <div class="menu-sec for-board">
+        <label><input type="checkbox" id="optTray"> Show snippet tray</label>
+        <label title="While you move or size a card, it goes in line with the edges and middles of other cards, and to their sizes. Hold Alt to move freely"><input type="checkbox" id="optGuides"> Guides (line up and same size)</label>
+      </div>
+      <div class="menu-sec">
+        <div class="menu-title">Theme</div>
+        <label><input type="radio" name="theme" value="system"> Same as the computer</label>
+        <label><input type="radio" name="theme" value="light"> Light</label>
+        <label><input type="radio" name="theme" value="dark"> Dark</label>
+      </div>
+      <div class="menu-sec">
+        <button data-act="dictionary" title="The terms and definitions of this project, and the global ones">Dictionary…</button>
+        <button data-act="sources" title="The status of each source of this project (current, superseded, withdrawn), and the last check of its web address">Sources…</button>
+        <button data-act="popout">Open the other view in a new window</button>
+        <button data-act="help">Help</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ============ PROJECTS ============ -->
+<section id="projectsView" class="view">
+  <div class="proj-wrap">
+    <div class="lib-head">
+      <div class="lib-tabs" id="libTabs">
+        <button data-tab="projects" class="active">Projects</button>
+        <button data-tab="pdfs">PDF library</button>
+        <button data-tab="boards">Board library</button>
+      </div>
+      <span class="spacer"></span>
+      <label class="btn" id="libUpload" hidden title="Add PDFs to the library, in no project">Upload PDFs…<input type="file" accept="application/pdf" multiple hidden></label>
+    </div>
+    <div id="projGrid" class="proj-grid" data-tab="projects"></div>
+    <p id="projEmpty" class="proj-empty" hidden>No projects yet. Start one with <b>＋ New project</b>, then add PDFs to it.</p>
+    <div id="pdfLib" class="lib-table" data-tab="pdfs" hidden></div>
+    <div id="boardLib" class="lib-table" data-tab="boards" hidden></div>
+  </div>
+</section>
+
+<!-- ============ READ ============ -->
+<section id="readView" class="view">
+  <nav class="rail" aria-label="Reader tools">
+    <div class="rail-group" id="pdfMode">
+      <button data-mode="text" class="active" title="Select text to make a snippet"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14M12 5v14M9 19h6"/></svg><span>Text</span></button>
+      <button data-mode="highlight" title="Highlight: select text to colour it at once (no snippet). Pick the colour below"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4l6 6-8 8H6v-6z"/><path d="M4 20h16" stroke-width="3" opacity=".45"/></svg><span>Highlight</span></button>
+      <button data-mode="area" title="Drag a box around a figure, table or image (or hold ⌥ in Text mode)"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6" width="16" height="12" rx="1" stroke-dasharray="3 2"/></svg><span>Area</span></button>
+    </div>
+    <div class="rail-group mark-colors" id="markColors" hidden></div>
+    <div class="rail-sep"></div>
+    <button id="pdfFind" title="Find text in this PDF (⌘F)"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="5.5"/><path d="M14.5 14.5L20 20"/><path d="M7.5 10h5" opacity=".6"/></svg><span>Find</span></button>
+    <button id="pdfZoomIn" title="Zoom in"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M11 8v6M8 11h6M16 16l4 4"/></svg><span>Zoom</span></button>
+    <button id="pdfFit" title="Fit width"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg><span>Fit</span></button>
+    <button id="pdfZoomOut" title="Zoom out"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M8 11h6M16 16l4 4"/></svg><span>Out</span></button>
+  </nav>
+  <aside id="filesPane" hidden>
+    <div class="fp-head">
+      <span class="fp-title">Files</span>
+      <div id="fpScope" class="fp-scope">
+        <button data-scope="project" title="The folders of this project">Project</button>
+        <button data-scope="global" title="The global folders: every PDF in the library, the same in every project">Global</button>
+      </div>
+      <button id="fpNew" title="New folder">＋ Folder</button>
+    </div>
+    <input id="fpFilter" type="search" placeholder="Filter files…" autocomplete="off" spellcheck="false">
+    <div id="fpTree" class="fp-tree"></div>
+  </aside>
+  <div class="grip" id="filesGrip" title="Drag to change the width · double-click for the standard width"></div>
+  <div id="readMain">
+  <div id="pdfTabs" class="pdf-tabs" hidden></div>
+  <div id="pdfScroll">
+    <div id="pdfPages"></div>
+    <div id="findWrap"><div id="findBar" class="find-bar" hidden>
+      <input id="findInput" type="search" placeholder="Find in this PDF…" autocomplete="off" spellcheck="false">
+      <span id="findCount" class="find-count"></span>
+      <button id="findPrev" title="Previous match (⇧Enter)">↑</button>
+      <button id="findNext" title="Next match (Enter)">↓</button>
+      <button id="findClose" title="Close (Esc)">×</button>
+    </div></div>
+    <div id="pdfEmpty">
+      <p><b>Add a PDF</b> or drop one here.</p>
+      <p>Select text to make a snippet. Use <b>Area</b> for figures and tables. Write a note on each snippet, then sort them on the <b>Board</b>.</p>
+    </div>
+    <div id="hlMenu" class="hlmenu" hidden></div>
+  </div>
+  </div>
+  <div class="grip" id="sideGrip" title="Drag to change the width · double-click for the standard width"></div>
+  <aside id="readSide">
+    <div class="side-tabs" id="sideTabs">
+      <button data-side="snippets" class="active">Snippets <span id="hlCount"></span></button>
+      <button data-side="sections">Sections <span id="secCount"></span></button>
+      <button data-side="details">Details</button>
+      <button data-side="terms" title="The dictionary: terms and their definitions">Terms <span id="termCount"></span></button>
+      <button data-side="review" class="for-review" title="Each highlighted passage of this PDF, with the snippets it links to">Links <span id="revCount"></span></button>
+    </div>
+    <div id="hlList" data-side="snippets"></div>
+    <div id="outlineList" data-side="sections" hidden></div>
+    <div id="pdfDetails" data-side="details" hidden></div>
+    <div id="reviewPanel" data-side="review" hidden></div>
+    <div id="termsPanel" class="terms-panel" data-side="terms" hidden></div>
+  </aside>
+</section>
+
+<!-- ============ BOARD ============ -->
+<section id="boardView" class="view">
+  <nav class="rail" aria-label="Board tools">
+    <div class="rail-group" id="tools">
+      <button data-tool="move" title="Select and move (V)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4l12 7-5 1.5L10.5 18z"/></svg><span>Select</span></button>
+      <button data-tool="mark" title="Highlight (H): select words in a text card, or drag a box on a picture, to highlight and link them. Click a highlight for its menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h6M5 17h10"/><path d="M13 9.5h7v5h-7z" stroke-width="0" fill="currentColor" opacity=".35"/></svg><span>Highlight</span></button>
+      <button data-tool="pen" title="Pen (P): draw on cards, pictures and the board. Hold Shift for a straight line"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 4l4 4L9 19l-5 1 1-5z"/></svg><span>Pen</span></button>
+      <button data-tool="zone" title="Zone (Z): drag a box on the board. Cards inside it move with it"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2.5" stroke-dasharray="3 2"/><path d="M3.5 9h17" opacity=".6"/></svg><span>Zone</span></button>
+      <button data-tool="erase" title="Erase (E): drag over pen strokes to remove them"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 20h12M5 14l8-8 6 6-6 6H9z"/></svg><span>Erase</span></button>
+    </div>
+    <div class="swatches" id="swatches"></div>
+    <div class="rail-sep"></div>
+    <button id="addNote" title="New note card (N)"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M12 9v6M9 12h6"/></svg><span>Card</span></button>
+    <div class="rail-sep"></div>
+    <button id="boardZoomIn" title="Zoom in"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M11 8v6M8 11h6M16 16l4 4"/></svg><span>Zoom</span></button>
+    <button id="fit" title="Fit everything in view (F)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg><span>Fit</span></button>
+    <button id="boardZoomOut" title="Zoom out"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M8 11h6M16 16l4 4"/></svg><span>Out</span></button>
+  <div class="rail-sep"></div>
+    <div class="rail-label" title="Show only the selected card and the cards near it">Focus</div>
+    <div class="rail-deg" id="isoBtns">
+      <button data-depth="1" title="Selected card and cards 1 link away (1)">1°</button>
+      <button data-depth="2" title="Selected card and cards up to 2 links away (2)">2°</button>
+      <button data-depth="3" title="Selected card and cards up to 3 links away (3)">3°</button>
+      <button data-depth="0" title="Show all cards (0 or Esc)">All</button>
+    </div>
+  </nav>
+  <aside id="tray">
+    <div class="side-head">Snippets</div>
+    <div class="tray-filters">
+      <select id="trayPdf" title="Show snippets from one PDF"></select>
+      <select id="traySection" title="Show snippets from one section" hidden></select>
+      <input id="traySearch" type="search" placeholder="Filter snippets…" autocomplete="off">
+      <label class="check"><input type="checkbox" id="trayHidePlaced" checked> Hide snippets already on this board</label>
+    </div>
+    <div id="trayList"></div>
+  </aside>
+  <div id="divider" title="Drag to resize · double-click to hide the tray"></div>
+  <section id="boardPane">
+    <div id="world">
+      <div id="frames"></div>
+      <div id="cards"></div>
+      <svg id="strings" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div id="labels"></div>
+    </div>
+    <div id="snipPreview" class="snip-preview" hidden></div>
+    <div id="boardHint">
+      Drag snippets from the tray onto the board · right-click for a menu · drag a card's edge dot onto another card to connect them · double-click an arrow to travel along it
+    </div>
+  </section>
+</section>
+
+<dialog id="addPdfDialog" class="add-pdf">
+  <div class="ap-head"><h2>Add sources</h2><span id="apTarget"></span></div>
+  <div class="lib-tabs" id="apTabs">
+    <button data-ap="upload" class="active">Files</button>
+    <button data-ap="web">Web page</button>
+    <button data-ap="library">From the library</button>
+  </div>
+  <div class="ap-pane" data-ap="upload">
+    <label class="drop-zone" id="apDrop">
+      <input type="file" accept="application/pdf,image/*,.html,.htm,.txt,.md,.markdown,.csv" multiple hidden>
+      <b>Drop files here</b><span>PDFs, or images, HTML, text and Markdown (saved as PDFs). Or click to choose files.</span>
+    </label>
+    <div id="apUploads" class="ap-list"></div>
+  </div>
+  <div class="ap-pane" data-ap="web" hidden>
+    <form id="apWebForm" class="ap-web">
+      <input id="apUrl" type="url" placeholder="https://… the address of the page" autocomplete="off" required>
+      <button type="submit" class="primary">Save a snapshot</button>
+    </form>
+    <p class="ap-note" id="apWebNote">The page is opened in a hidden window and saved as a PDF snapshot, with its address and the date. Then you can snip it like any PDF.</p>
+    <div id="apWebList" class="ap-list"></div>
+  </div>
+  <div class="ap-pane" data-ap="library" hidden>
+    <input id="apSearch" type="search" placeholder="Search the library…" autocomplete="off">
+    <div id="apLibrary" class="ap-list"></div>
+  </div>
+  <div class="ap-foot">
+    <span id="apInfo"></span>
+    <span class="spacer"></span>
+    <button id="apClose" type="button">Done</button>
+    <button id="apAdd" type="button" class="primary" hidden>Add selected</button>
+  </div>
+</dialog>
+
+<dialog id="helpDialog">
+  <h2>Using Corkboard</h2>
+  <h3>Projects</h3>
+  <ul>
+    <li>A project holds its own boards and PDFs. Open one from the <b>Projects</b> view.</li>
+    <li><b>＋ Add</b> adds sources to the open project: PDFs, web pages (saved as PDF snapshots), images, HTML, text and Markdown files, or PDFs from the library. A PDF in two projects shares its snippets and sections.</li>
+    <li><b>Open</b> in the PDF library edits a PDF with no project: sections, snippets, notes and details. They come with the PDF into every project.</li>
+    <li>Deleting a project moves it and its boards to <code>data/trash</code>. Its PDFs stay in the PDF library, unless you tick the box to trash the PDFs that only this project uses.</li>
+    <li><b>PDF library</b> lists every PDF, with the projects that use it. Add a PDF to a project there, or move it to the trash.</li>
+    <li><b>Board library</b> lists every board. Open a board, move it to another project, or move it to the trash.</li>
+  </ul>
+  <h3>Read</h3>
+  <ul>
+    <li><b>Text snippet:</b> select text in the PDF and pick a colour. Type a note in the box that opens. <kbd>Enter</kbd> saves it.</li>
+    <li><b>Area snippet:</b> switch to <b>Area</b> (or hold <kbd>⌥</kbd>) and drag a box around a figure, table or image.</li>
+    <li><b>Edit a snippet:</b> click it in the PDF, or edit its note in the sidebar.</li>
+    <li><b>Layers and links:</b> make a snippet inside another (a term inside a paragraph). Click it and choose <b>↗ Link to…</b> to link it to its definition. Hover over a linked term to read the definition. On a board, linked and layered cards get arrows when you place them.</li>
+    <li><b>Sections:</b> select a heading and pick Section, Sub-section or Level 3. Or use “＋ Section at this page” in the Sections tab. Snippets show the section they are in.</li>
+  </ul>
+  <h3>Board</h3>
+  <ul>
+    <li><b>Sort:</b> drag snippets from the tray onto the board. Double-click a tray item to drop it in the centre.</li>
+    <li><b>Groups:</b> Options → Group by document puts each PDF's cards in a frame of their own. Options → New group adds an empty frame. Drag a frame's title bar to move it with its cards, drag its corner to resize, double-click the title to rename.</li>
+    <li><b>Look first:</b> click a tray item. Its card comes to the centre, or a preview opens there with <b>＋ Place on board</b>. <kbd>←</kbd> <kbd>→</kbd> step through the tray. <kbd>Esc</kbd> closes it.</li>
+    <li><b>Back to the source:</b> click the “file · p.N” line on a card. The PDF opens at that spot.</li>
+    <li><b>Cards:</b> double-click empty space for a new card. Double-click any card to add a board note to it.</li>
+    <li><b>Connect:</b> hover a card and drag one of its edge dots onto another card.</li>
+    <li><b>Sub-links:</b> snippets inside a card's snippet show as highlighted words. Link a word to a word in another snippet (Link to… in the reader), and the arrow joins the two highlighted words. Hover a word to light its arrow. Click a linked word to see its target, and the links into it, in a popup with Open in PDF and Place on board.</li>
+    <li><b>Review projects:</b> Projects → ＋ New review. Add the PDF to check, highlight its passages, and link each one to snippets in other PDFs. The Links tab lists every passage with what it links to.</li>
+    <li><b>Highlight:</b> in the reader, pick Highlight and a colour, then select text. It is coloured at once and is not a snippet. Click it to recolour, make it a snippet or delete it.</li>
+    <li><b>Right-click:</b> on the board, cards, connections and zones have a menu: edit, colour, reverse, delete and more.</li>
+    <li><b>Notes:</b> right-click the empty board and pick Add custom card (or press N). A new card stays even with no text. Right-click a card for its menu, or double-click a note to write in it. A toolbar gives headings, bold, italic, lists, tasks, quotes and three text sizes. Click a task's box to tick it.</li>
+    <li><b>Zones:</b> pick Zone (Z) and drag a box on the board. Cards inside it move with it. Click the dot in its title to change the colour.</li>
+    <li><b>Footnotes:</b> a snippet with a footnote mark carries the footnote from the foot of its page. Refresh text adds them to older snippets.</li>
+    <li><b>Snippets across pages:</b> repeated page headers and footers are left out by themselves. Select one and click "Skip as header/footer" to mark it by hand.</li>
+    <li><b>Reference tags:</b> select a citation or document name and click 🔖 Reference. It gets its own colour, and you pick what it links to: another PDF, a snippet or a whole document.</li>
+    <li><b>Highlight words on a card:</b> pick Highlight, then select words in a card's text and pick a colour. The highlight stays on the card, not in the PDF. Click a highlighted word (with Highlight on) to link it, change its colour or remove it. "Pick on the board instead" links it to a word or card you click.</li>
+    <li><b>Resize a card:</b> drag its corner grip, its right edge or its bottom edge. Long text scrolls inside a short card. Double-click the corner to fit the height to the text again. A picture card keeps the shape of its picture.</li>
+    <li><b>Annotate a connection:</b> click it. A bar opens with a label, a note, the direction (→ ← ↔ —), the colour, the line style (dashed, dotted, double, track, glow…), the width, and delete. <kbd>Enter</kbd> on a selected connection goes to its label.</li>
+    <li><b>Travel:</b> double-click an arrow. The view moves to the card at the other end.</li>
+    <li><b>Focus:</b> select a card and press <kbd>1</kbd>, <kbd>2</kbd> or <kbd>3</kbd>. Only cards within that many links stay visible. <kbd>0</kbd> or <kbd>Esc</kbd> shows all.</li>
+    <li><b>Structured layout:</b> press <kbd>L</kbd>. Each group gets a lane (a card's group, else its colour). The busiest lane follows document order. Other lanes line up with the cards they link to. Drag a lane's header card to move the lane.</li>
+    <li><b>Export:</b> Options → Export gives one HTML file to share. It can include the source PDFs. A copy goes to <code>data/exports</code>.</li>
+    <li><b>Circuit arrows:</b> Options → Arrows → Circuit gives straight lines with 90° turns.</li>
+    <li><b>Gravity:</b> press <kbd>G</kbd>. Linked cards pull together, cards push apart and same colours gather. Drag a card and the rest follow. <kbd>⌘Z</kbd> returns the layout from before.</li>
+    <li><b>Draw:</b> pick Pen, then draw on a card, a picture or the board. Erase removes strokes.</li>
+    <li><b>Move around:</b> drag empty space or scroll to pan. Pinch or <kbd>⌘</kbd>+scroll to zoom.</li>
+    <li><b>Keys:</b> <kbd>⌘F</kbd> find in the PDF · <kbd>V</kbd> select · <kbd>H</kbd> highlight words · <kbd>P</kbd> pen · <kbd>E</kbd> erase · <kbd>Z</kbd> zone · <kbd>N</kbd> card · <kbd>F</kbd> fit · <kbd>G</kbd> gravity · <kbd>L</kbd> layout · <kbd>1</kbd>–<kbd>3</kbd> focus · <kbd>Del</kbd> delete · <kbd>⌘Z</kbd> undo</li>
+  </ul>
+  <p>Rename, delete, arrow style, layout and the snippet tray are under <b>Options</b>. Press <kbd>?</kbd> for this help.</p>
+  <p><b>Two screens:</b> Options → <i>Open the other view in a new window</i>. Read in one window and sort in the other. They stay in sync.</p>
+  <form method="dialog"><button>Got it</button></form>
+</dialog>
+
+<script type="module" src="/app.js"></script>
+</body>
+</html>

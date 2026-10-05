@@ -1,0 +1,488 @@
+/* docedit. The host can set these variables on .de-doc, .de-bar and .de-pop (or on a parent). */
+.de-doc, .de-bar, .de-pop {
+  --de-ink: #1f2328; --de-muted: #6b7280; --de-line: #d0d5dd; --de-fill: #eef0f3; --de-panel: #ffffff; --de-accent: #2f6fed; --de-danger: #c0392b;
+  --de-c-red: #d1343f; --de-c-orange: #c96a12; --de-c-green: #2e8b57; --de-c-blue: #2f6fed; --de-c-purple: #8a4fd3; --de-c-grey: #7a8290;
+  --de-h-yellow: #ffe45c; --de-h-green: #8fe3a0; --de-h-blue: #9cc9ff; --de-h-pink: #ffa8cf; --de-h-orange: #ffc27a; --de-h-purple: #cdb1ff;
+}
+
+/* ---------- the document (the editor and renderDoc make the same HTML) ---------- */
+.de-doc { overflow-wrap: break-word; }
+.de-doc > :first-child { margin-top: 0; }
+.de-doc > :last-child { margin-bottom: 0; }
+.de-doc p { margin: 0; min-height: 1.3em; }
+.de-doc h1, .de-doc h2, .de-doc h3 { font-weight: 700; line-height: 1.25; margin: .25em 0 .3em; }
+.de-doc h1 { font-size: 1.4em; }
+.de-doc h2 { font-size: 1.2em; }
+.de-doc h3 { font-size: 1.05em; }
+.de-doc [data-align="center"] { text-align: center; }
+.de-doc [data-align="right"] { text-align: right; }
+.de-doc ul, .de-doc ol { margin: .15em 0; padding-left: 1.5em; }
+.de-doc li > p { margin: 0; }
+.de-doc blockquote { margin: .25em 0; padding-left: .7em; border-left: 3px solid var(--de-line); color: var(--de-muted); }
+.de-doc code { font: .9em ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--de-fill); padding: 0 3px; border-radius: 4px; }
+.de-doc a { color: var(--de-accent); }
+.de-doc sup, .de-doc sub { font-size: .72em; line-height: 0; }
+.de-doc ul.de-tasks { list-style: none; padding-left: .1em; }
+.de-doc li.de-task { display: flex; gap: .5em; align-items: flex-start; }
+.de-doc .de-task-body { flex: 1; min-width: 0; }
+.de-doc .de-check { flex: none; width: .9em; height: .9em; margin-top: .25em; border: 1.5px solid var(--de-muted); border-radius: 3px; cursor: pointer; user-select: none; }
+.de-doc li.de-task[data-checked="true"] > .de-check { background: var(--de-accent); border-color: var(--de-accent); box-shadow: inset 0 0 0 2px var(--de-panel); }
+.de-doc li.de-task[data-checked="true"] > .de-task-body { color: var(--de-muted); text-decoration: line-through; }
+.de-doc span[data-color="red"] { color: var(--de-c-red); }
+.de-doc span[data-color="orange"] { color: var(--de-c-orange); }
+.de-doc span[data-color="green"] { color: var(--de-c-green); }
+.de-doc span[data-color="blue"] { color: var(--de-c-blue); }
+.de-doc span[data-color="purple"] { color: var(--de-c-purple); }
+.de-doc span[data-color="grey"] { color: var(--de-c-grey); }
+.de-doc mark { color: inherit; border-radius: 2px; padding: 0 1px; background: color-mix(in srgb, var(--de-h-yellow) 55%, transparent); }
+.de-doc mark[data-hl="green"] { background: color-mix(in srgb, var(--de-h-green) 55%, transparent); }
+.de-doc mark[data-hl="blue"] { background: color-mix(in srgb, var(--de-h-blue) 55%, transparent); }
+.de-doc mark[data-hl="pink"] { background: color-mix(in srgb, var(--de-h-pink) 55%, transparent); }
+.de-doc mark[data-hl="orange"] { background: color-mix(in srgb, var(--de-h-orange) 55%, transparent); }
+.de-doc mark[data-hl="purple"] { background: color-mix(in srgb, var(--de-h-purple) 55%, transparent); }
+.de-doc table { border-collapse: collapse; width: 100%; margin: .35em 0; }
+.de-doc td, .de-doc th { border: 1px solid var(--de-line); padding: 3px 6px; vertical-align: top; position: relative; min-width: 1.5em; }
+.de-doc th { background: var(--de-fill); font-weight: 600; text-align: left; }
+.de-doc .de-math { cursor: default; padding: 0 1px; }
+.de-doc .de-math-block { display: block; text-align: center; margin: .3em 0; }
+.de-doc .de-math-empty, .de-math-preview .de-math-empty { color: var(--de-muted); }
+.de-doc .de-math-err { color: var(--de-danger); font-family: ui-monospace, Menlo, monospace; font-size: .9em; }
+
+/* ---------- the editor ---------- */
+.de-editor { position: relative; white-space: pre-wrap; white-space: break-spaces; outline: none; font-variant-ligatures: none; }
+.de-editor .de-math { cursor: pointer; border-radius: 3px; }
+.de-editor .de-math:hover, .de-editor .de-math.ProseMirror-selectednode { background: color-mix(in srgb, var(--de-accent) 16%, transparent); }
+.de-editor .ProseMirror-selectednode { outline: 2px solid color-mix(in srgb, var(--de-accent) 60%, transparent); outline-offset: 1px; }
+.de-editor p.de-empty::before { content: attr(data-ph); color: var(--de-muted); pointer-events: none; float: left; height: 0; }
+.de-editor .selectedCell::after { content: ""; position: absolute; inset: 0; background: color-mix(in srgb, var(--de-accent) 18%, transparent); pointer-events: none; z-index: 2; }
+.de-editor li.de-task > .de-check { margin-top: .28em; }
+.ProseMirror-hideselection *::selection { background: transparent; }
+.ProseMirror-hideselection { caret-color: transparent; }
+.ProseMirror-gapcursor { display: none; pointer-events: none; position: absolute; }
+.ProseMirror-gapcursor::after { content: ""; display: block; position: absolute; top: -2px; width: 20px; border-top: 1px solid var(--de-ink); animation: de-blink 1.1s steps(2, start) infinite; }
+.ProseMirror-focused .ProseMirror-gapcursor { display: block; }
+@keyframes de-blink { to { visibility: hidden; } }
+
+/* ---------- the tool bar ---------- */
+.de-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 1px; padding: 3px; max-width: 470px; box-sizing: border-box;
+  background: var(--de-panel); color: var(--de-ink); border: 1px solid var(--de-line); border-radius: 9px; box-shadow: 0 4px 14px rgba(0, 0, 0, .14); font: 13px/1 system-ui, sans-serif; }
+.de-b { min-width: 26px; height: 26px; padding: 0 5px; border: 0; border-radius: 6px; background: transparent; color: inherit; cursor: pointer; font: 600 13px/1 system-ui, sans-serif; display: inline-flex; align-items: center; justify-content: center; }
+.de-b:hover { background: var(--de-fill); }
+.de-b.on { background: color-mix(in srgb, var(--de-accent) 18%, transparent); color: var(--de-accent); }
+.de-b:disabled { opacity: .35; cursor: default; background: transparent; }
+.de-b sup, .de-b sub { font-size: .7em; }
+.de-b-italic { font-style: italic; font-family: Georgia, serif; }
+.de-b-underline { text-decoration: underline; }
+.de-b-strike { text-decoration: line-through; }
+.de-b-link { font-size: 12px; }
+.de-b-color { border-bottom: 3px solid var(--de-ink); border-radius: 6px 6px 2px 2px; height: 23px; }
+.de-b-color[data-color="red"] { border-color: var(--de-c-red); } .de-b-color[data-color="orange"] { border-color: var(--de-c-orange); }
+.de-b-color[data-color="green"] { border-color: var(--de-c-green); } .de-b-color[data-color="blue"] { border-color: var(--de-c-blue); }
+.de-b-color[data-color="purple"] { border-color: var(--de-c-purple); } .de-b-color[data-color="grey"] { border-color: var(--de-c-grey); }
+.de-b-hl { background: color-mix(in srgb, var(--de-h-yellow) 70%, transparent); }
+.de-b-hl:hover { background: var(--de-h-yellow); }
+.de-b-hl[data-hl="green"] { background: var(--de-h-green); } .de-b-hl[data-hl="blue"] { background: var(--de-h-blue); } .de-b-hl[data-hl="pink"] { background: var(--de-h-pink); }
+.de-b-hl[data-hl="orange"] { background: var(--de-h-orange); } .de-b-hl[data-hl="purple"] { background: var(--de-h-purple); }
+.de-b-hl, .de-b-hl.on { color: #1f2328; }
+.de-bar-sep { width: 1px; height: 16px; margin: 0 3px; background: var(--de-line); }
+
+/* ---------- the small windows ---------- */
+.de-pop { position: fixed; z-index: 10000; padding: 6px; background: var(--de-panel); color: var(--de-ink); border: 1px solid var(--de-line); border-radius: 9px; box-shadow: 0 8px 24px rgba(0, 0, 0, .2); font: 13px/1.3 system-ui, sans-serif; }
+.de-pop button { font: inherit; color: inherit; border: 0; border-radius: 6px; background: transparent; cursor: pointer; padding: 5px 9px; }
+.de-pop button:hover { background: var(--de-fill); }
+.de-pop button.de-ok { background: var(--de-accent); color: #fff; }
+.de-pop input[type="url"], .de-pop textarea { font: inherit; color: inherit; background: var(--de-panel); border: 1px solid var(--de-line); border-radius: 6px; padding: 5px 7px; outline: none; box-sizing: border-box; }
+.de-pop input[type="url"]:focus, .de-pop textarea:focus { border-color: var(--de-accent); }
+.de-swatches { display: flex; gap: 4px; }
+.de-pop button.de-swatch { width: 22px; height: 22px; padding: 0; border-radius: 50%; border: 1px solid var(--de-line); font-size: 12px; line-height: 1; }
+.de-swatch.on { box-shadow: 0 0 0 2px var(--de-accent); }
+.de-swatch[data-color="red"] { background: var(--de-c-red); } .de-swatch[data-color="orange"] { background: var(--de-c-orange); } .de-swatch[data-color="green"] { background: var(--de-c-green); }
+.de-swatch[data-color="blue"] { background: var(--de-c-blue); } .de-swatch[data-color="purple"] { background: var(--de-c-purple); } .de-swatch[data-color="grey"] { background: var(--de-c-grey); }
+.de-swatch[data-hl="yellow"] { background: var(--de-h-yellow); } .de-swatch[data-hl="green"] { background: var(--de-h-green); } .de-swatch[data-hl="blue"] { background: var(--de-h-blue); }
+.de-swatch[data-hl="pink"] { background: var(--de-h-pink); } .de-swatch[data-hl="orange"] { background: var(--de-h-orange); } .de-swatch[data-hl="purple"] { background: var(--de-h-purple); }
+.de-form { display: flex; gap: 6px; align-items: center; }
+.de-form input[type="url"] { width: 240px; }
+.de-math-form { flex-direction: column; align-items: stretch; width: 300px; }
+.de-math-form textarea { width: 100%; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.de-math-preview { min-height: 30px; padding: 6px; text-align: center; overflow-x: auto; background: var(--de-fill); border-radius: 6px; font-size: 16px; }
+.de-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.de-check-row { display: flex; gap: 6px; align-items: center; color: var(--de-muted); cursor: pointer; }
+.de-menu { display: flex; flex-direction: column; padding: 4px; min-width: 170px; }
+.de-pop.de-menu button { text-align: left; }
+.de-pop.de-menu button.danger { color: var(--de-danger); }
+.de-sep { height: 1px; margin: 4px 2px; background: var(--de-line); }
+.de-sep:first-child, .de-sep:last-child, .de-sep + .de-sep { display: none; }
+
+/* ---------- MathML rules from Temml (MIT) ---------- */
+/*
+Temml.woff2 is a clone of KaTeX_Script-Regular, except that the code points
+have been changed from ASCII to Unicode Mathematical Alphanumeric Symbols Script capitals,
+Unicode range 1D49C to 1D4B5.
+*/
+
+@font-face {
+  font-family: 'Temml';
+  src: url('Temml.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+}
+
+math {
+  font-family: "Cambria Math", 'STIXTwoMath-Regular', 'NotoSansMath-Regular', math;
+  font-style: normal;
+  font-weight: normal;
+  line-height: normal;
+  font-size-adjust: none;
+  text-indent: 0;
+  text-transform: none;
+  letter-spacing: normal;
+  word-wrap: normal;
+  direction: ltr;
+  /* Prevent Firefox from omitting the dot on i or j. */
+  font-feature-settings: "dtls" off;
+}
+
+math * {
+  border-color: currentColor;
+}
+
+/* display: block is necessary in Firefox and Safari.
+ * Not in Chromium, which recognizes display: "block math" written inline. */
+ math.tml-display {
+  display: block;
+  width: 100%;
+}
+
+*.mathcal {
+  /* NotoSans */
+  font-feature-settings: 'ss01';
+}
+
+math .mathscr {
+  font-family: "Temml";
+}
+
+mo.tml-prime {
+  font-family: Temml;
+}
+
+/* Cramped superscripts in WebKit */
+mfrac > :nth-child(2),
+msqrt,
+mover > :first-child {
+  math-shift: compact
+}
+
+.menclose {
+  display: inline-block;
+  position: relative;
+  padding: 0.5ex 0ex;
+}
+.tml-cancelto {
+  display: inline-block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 0.5ex 0ex;
+  background-color: currentColor;
+  /* Use the SVG as an alpha mask (painted by background-color) */
+  -webkit-mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'><defs><marker id='a' markerHeight='5' markerUnits='strokeWidth' markerWidth='7' orient='auto' refX='7' refY='2.5'><path fill='black' d='m0 0 7 2.5L0 5z'/></marker></defs><line x2='100%25' y1='100%25' stroke='black' stroke-width='.06em' marker-end='url(%23a)' vector-effect='non-scaling-stroke'/></svg>");
+          mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'><defs><marker id='a' markerHeight='5' markerUnits='strokeWidth' markerWidth='7' orient='auto' refX='7' refY='2.5'><path fill='black' d='m0 0 7 2.5L0 5z'/></marker></defs><line x2='100%25' y1='100%25' stroke='black' stroke-width='.06em' marker-end='url(%23a)' vector-effect='non-scaling-stroke'/></svg>");
+  -webkit-mask-repeat: no-repeat;
+          mask-repeat: no-repeat;
+  -webkit-mask-size: 100% 100%;
+          mask-size: 100% 100%;
+  -webkit-mask-position: 0 0;
+          mask-position: 0 0;
+}
+
+@supports (-moz-appearance: none) {
+  /* \vec w/o italic correction for Firefox */
+  .tml-vec {
+    transform: scale(0.75)
+  }
+  /* Fix \cancelto in Firefox */
+  .ff-narrow {
+    width: 0em;
+  }
+  .ff-nudge-left {
+    margin-left: -0.2em;
+  }
+  /* Squash hidden mrows in \bordermatrix. Messes with centering, but necessary to squash. */
+  .ff-squash mtd {
+    display: block;
+    height: 0;
+  }
+}
+
+@supports (not (-moz-appearance: none)) {
+  /* Chromium and WebKit */
+  /* prime vertical alignment */
+  mo.tml-prime {
+    font-family: Temml;
+  }
+  /* Italic correction on superscripts */
+  .tml-sml-pad {
+    padding-left: 0.05em;
+  }
+  .tml-med-pad {
+    padding-left: 0.10em;
+  }
+  .tml-lrg-pad {
+    padding-left: 0.15em;
+  }
+}
+
+@supports (-webkit-backdrop-filter: blur(1px)) {
+  /* WebKit vertical & italic correction on accents */
+  .wbk-acc {
+    /* lower by x-height distance */
+    transform: translate(0em, 0.431em);
+  }
+  .wbk-sml {
+    transform: translate(0.07em, 0);
+  }
+  .wbk-sml-acc {
+    transform: translate(0.07em, 0.431em);
+  }
+  .wbk-sml-vec {
+    transform: scale(0.75) translate(0.07em, 0);
+  }
+  .wbk-med {
+    transform: translate(0.14em, 0);
+  }
+  .wbk-med-acc {
+    transform: translate(0.14em, 0.431em);
+  }
+  .wbk-med-vec {
+    transform: scale(0.75) translate(0.14em, 0);
+  }
+  .wbk-lrg {
+    transform: translate(0.21em, 0);
+  }
+  .wbk-lrg-acc {
+    transform: translate(0.21em, 0.431em);
+  }
+  .wbk-lrg-vec {
+    transform: scale(0.75) translate(0.21em, 0);
+  }
+}
+
+/* \cancel & \phase use background images. Get them to print. */
+menclose {
+  -webkit-print-color-adjust: exact;  /* Chrome & Edge */
+          print-color-adjust: exact;
+}
+
+/* Array cell justification in Firefox & WebKit */
+.tml-right {
+  text-align: right;
+}
+.tml-left {
+  text-align: left;
+}
+
+/* For CD labels that grow to the left in Firefox and WebKit */
+.tml-shift-left { margin-left:-200% }
+
+/* Styles for Chromium only */
+@supports (not (-webkit-backdrop-filter: blur(1px))) and (not (-moz-appearance: none)) {
+  /* Italic correction on accents */
+  .chr-sml {
+    transform: translate(0.07em, 0)
+  }
+  .chr-sml-vec {
+    transform: scale(0.75) translate(0.07em, 0)
+  }
+  .chr-med {
+    transform: translate(0.14em, 0)
+  }
+  .chr-med-vec {
+    transform: scale(0.75) translate(0.14em, 0)
+  }
+  .chr-lrg {
+    transform: translate(0.21em, 0)
+  }
+  .chr-lrg-vec {
+    transform: scale(0.75) translate(0.21em, 0)
+  }
+
+  /* For CD labels that grow to the left */
+  .tml-shift-left { margin-left:-100% }
+
+  /* MathML Core & Chromium do not support the MathML 3.0 element <menclose> attributes. */
+  /* So use styles. */
+  menclose {
+    position: relative;
+    padding: 0.5ex 0ex;
+  }
+  
+    .tml-overline {
+    padding: 0.1em 0 0 0;
+    border-top: 0.065em solid;
+  }
+
+  .tml-underline {
+    padding: 0 0 0.1em 0;
+    border-bottom: 0.065em solid;
+  }
+
+  .tml-cancel {
+    display: inline-block;
+    position: absolute;
+    left: 0.5px;
+    bottom: 0;
+    width: 100%;
+    height: 100%;
+    background-color: currentColor;
+  }
+  .upstrike {
+    clip-path: polygon(0.05em 100%, 0em calc(100% - 0.05em), calc(100% - 0.05em) 0em, 100% 0.05em);
+  }
+  .downstrike {
+    clip-path: polygon(0em 0.05em, 0.05em 0em, 100% calc(100% - 0.05em), calc(100% - 0.05em) 100%);
+  }
+  .sout {
+    clip-path: polygon(0em calc(55% + 0.0333em), 0em calc(55% - 0.0333em), 100% calc(55% - 0.0333em), 100% calc(55% + 0.0333em));
+  }
+  .tml-xcancel {
+    clip-path: polygon(0.05em 0em, 0em 0.05em, calc(50% - 0.05em) 50%, 0em calc(100% - 0.05em), 0.05em 100%, 50% calc(50% + 0.05em), calc(100% - 0.05em) 100%, 100% calc(100% - 0.05em), calc(50% + 0.05em) 50%, 100% 0.05em, calc(100% - 0.05em) 0%, 50% calc(50% - 0.05em));
+  }
+
+  .longdiv-top {
+    border-top: 0.067em solid;
+    padding: 0.1em 0.2em 0.2em 0.433em;
+  }
+  .longdiv-arc {
+    position: absolute;
+    top: 0;
+    bottom: 0.1em;
+    left: -0.4em;
+    width: 0.7em;
+    border: 0.067em solid;
+    transform: translateY(-0.067em);
+    border-radius: 70%;
+    clip-path: inset(0 0 0 0.4em);
+    box-sizing: border-box;}
+    .menclose {display: inline-block;
+    text-align: left;
+    position: relative;
+  }
+  
+  .phasor-bottom {
+    border-bottom: 0.067em solid;
+    padding: 0.2em 0.2em 0.1em 0.6em;
+  }
+  .phasor-angle {
+    display: inline-block;
+    position: absolute;
+    left: 0.5px;
+    bottom: -0.04em;
+    height: 100%;
+    aspect-ratio: 0.5;
+    background-color: currentColor;
+    clip-path: polygon(0.05em 100%, 0em calc(100% - 0.05em), calc(100% - 0.05em) 0em, 100% 0.05em);
+  }
+
+  .tml-fbox {
+    padding: 3pt;
+    border: 1px solid;
+  }
+
+  .circle-pad {
+    padding: 0.267em;
+  }
+  .textcircle {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: 0;
+    left: 0;
+    border: 0.067em solid;
+    border-radius: 50%;
+   }
+
+   .actuarial {
+    padding: 0.03889em 0.03889em 0 0.03889em;
+    border-width: 0.08em 0.08em 0em 0em;
+    border-style: solid;
+    margin-right: 0.03889em;
+   }
+
+   /* Stretch \widetilde */
+  .tml-tilde-2 {
+    transform: scale(2.0, 1.1)
+  }
+  .tml-tilde-3 {
+    transform: scale(3.0, 1.1)
+  }
+  .tml-tilde-4 {
+    transform: scale(4.0, 1.1)
+  }
+  /* Stretch \widehat */
+  .tml-hat-1 {
+    transform: scale(1.9, 1.0)
+  }
+  .tml-hat-2 {
+    transform: scale(3.9, 1.0)
+  }
+  .tml-hat-3 {
+    transform: scale(5.8, 1.0)
+  }
+  .tml-hat-4 {
+    transform: scale(7.8, 1.0)
+  }
+  
+  /* set array cell justification */
+  .tml-right {
+    text-align: -webkit-right;
+  }
+  .tml-left {
+    text-align: -webkit-left;
+  }
+}
+
+.special-fraction {
+  font-family: 'STIX TWO', 'Times New Roman', Times, Tinos, serif;
+}
+
+/* flex-wrap for line-breaking in Chromium */
+math {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+}
+math > mrow {
+  padding: 0.5ex 0ex;
+}
+
+/* Default mtd top padding is 0.5ex per MathML-Core and user-agent CSS */
+/* We adjust for jot and small */
+mtable.tml-jot > mtr > mtd {
+  padding-top: 0.7ex;
+  padding-bottom: 0.7ex;
+}
+mtable.tml-small mtd {
+  padding-top: 0.35ex;
+  padding-bottom: 0.35ex;
+}
+
+/* Firefox */
+@-moz-document url-prefix() {
+  /* Avoid flex-wrap */
+  math { display: inline; }
+  math > mrow { padding: 0 }
+  /* Adjust Firefox spacing between array rows */
+  mtd, mtable.tml-small mtd { padding-top: 0; padding-bottom: 0; }
+  mtable.tml-jot > mtr > mtd { padding-top: 0.2ex; padding-bottom: 0.2ex; }
+}
+
+/* AMS environment auto-numbering via CSS counter. */
+.tml-eqn::before {
+  counter-increment: tmlEqnNo;
+  content: "(" counter(tmlEqnNo) ")";
+}
+
+body {
+  counter-reset: tmlEqnNo;
+}

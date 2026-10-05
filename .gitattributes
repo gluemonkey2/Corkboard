@@ -1,0 +1,10 @@
+# Text files have LF line ends in the repository. Scripts keep the line ends that their system needs.
+* text=auto eol=lf
+*.sh text eol=lf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.png binary
+*.ico binary
+*.icns binary
+*.woff2 binary
+*.pdf binary

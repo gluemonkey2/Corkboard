@@ -1,0 +1,8 @@
+{
+  "name": "corkboard",
+  "productName": "Corkboard",
+  "version": "1.0.0",
+  "description": "Corkboard desktop launcher",
+  "main": "index.js",
+  "private": true
+}

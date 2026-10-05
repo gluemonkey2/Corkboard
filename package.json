@@ -1,0 +1,19 @@
+{
+  "name": "corkboard",
+  "version": "1.0.0",
+  "description": "Corkboard / crazy wall for PDF snippets",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js --open",
+    "serve": "node server.js"
+  },
+  "dependencies": {
+    "pdfjs-dist": "^6.3.289"
+  },
+  "private": true,
+  "devDependencies": {
+    "@electron/packager": "^20.3.0",
+    "electron": "^44.5.1"
+  },
+  "license": "MIT"
+}
