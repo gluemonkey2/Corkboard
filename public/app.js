@@ -1918,9 +1918,10 @@ $('#markColors').replaceChildren(...HL_COLORS.map((c) => {
 }));
 setMarkColor(store.get('corkboard.markColor') || HL_COLORS[0]);
 pdf.onMarkColor = setMarkColor;
-$('#pdfZoomIn').onclick = () => pdf.setScale(pdf.scale * 1.2);
-$('#pdfZoomOut').onclick = () => pdf.setScale(pdf.scale / 1.2);
-$('#pdfFit').onclick = () => pdf.fit();
+// The zoom buttons work on what shows: the pages of the reader, or the doc in the editor.
+$('#pdfZoomIn').onclick = () => (docEdit ? setDocZoom(docZoom * 1.2) : pdf.setScale(pdf.scale * 1.2));
+$('#pdfZoomOut').onclick = () => (docEdit ? setDocZoom(docZoom / 1.2) : pdf.setScale(pdf.scale / 1.2));
+$('#pdfFit').onclick = () => (docEdit ? setDocZoom(fitDocZoom()) : pdf.fit());
 
 // ---------- tray resize ----------
 const tray = $('#tray');
@@ -2083,6 +2084,7 @@ async function startDocEdit() {
   const state = { id: meta.id, ed: null, dirty: false, changed: false, timer: 0, page: pdf.currentPage() };
   $('#readMain').classList.add('doc-editing');
   $('#docEdit').hidden = false;
+  $('#docEditPage').style.zoom = docZoom;
   $('#docEditState').textContent = '';
   state.ed = createEditor($('#docEditPage'), {
     doc, placeholder: 'Write the doc…',
@@ -2133,6 +2135,26 @@ async function finishDocEdit({ reopen = true } = {}) {
   await loadSnippets();
   if (inLibraryTab()) await refreshLibrary();
   status(moved.lost ? `Doc saved. The words of ${plural(moved.lost, 'snippet')} are not in the doc now.` : 'Doc saved', moved.lost ? 'err' : 'ok');
+}
+// The zoom of the doc in the editor: the buttons at the left, and a pinch or Ctrl/⌘ + scroll, as in the reader.
+let docZoom = clamp(+store.get('corkboard.docZoom') || 1, 0.5, 3);
+function setDocZoom(z) {
+  docZoom = clamp(Math.round(z * 100) / 100, 0.5, 3);
+  $('#docEditPage').style.zoom = docZoom;
+  store.set('corkboard.docZoom', docZoom);
+  docEdit?.ed.view.focus(); // a press on a zoom button took the cursor from the text: put it back
+}
+// The zoom at which the page is as wide as the pane.
+const fitDocZoom = () => Math.max(0.5, ($('#docEditScroll').clientWidth - 36) / 780);
+{
+  let pending = 1, timer = 0;
+  $('#docEditScroll').addEventListener('wheel', (e) => {
+    if (!(e.ctrlKey || e.metaKey) || !docEdit) return;
+    e.preventDefault();
+    pending *= Math.exp(-e.deltaY * 0.01);
+    clearTimeout(timer);
+    timer = setTimeout(() => { setDocZoom(docZoom * pending); pending = 1; }, 60);
+  }, { passive: false });
 }
 $('#editDocBtn').onclick = () => startDocEdit().catch(fail);
 $('#docEditDone').onclick = () => finishDocEdit().catch(fail);
