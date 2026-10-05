@@ -59,6 +59,7 @@ module.exports = function projects({ DIRS, listJson, writeAtomic }) {
       [path.join(DIRS.pdfs, `${pdfId}.pdf`), `pdf-${pdfId}-${stamp}.pdf`],
       [path.join(DIRS.pdfs, `${pdfId}.json`), `pdf-${pdfId}-${stamp}.json`],
       [path.join(DIRS.annotations, `${pdfId}.json`), `snippets-${pdfId}-${stamp}.json`],
+      [path.join(DIRS.docs, `${pdfId}.json`), `doc-${pdfId}-${stamp}.json`], // a doc that the user wrote
     ];
     for (const [from, to] of moves) await fsp.rename(from, path.join(DIRS.trash, to)).catch(() => {});
     for (const o of await listJson(DIRS.projects)) {
@@ -154,7 +155,7 @@ module.exports = function projects({ DIRS, listJson, writeAtomic }) {
       const { projects, pdfs } = await locked(reconcile);
       const ann = new Map((await listJson(DIRS.annotations)).map((a) => [a.pdfId, a]));
       return pdfs.map((x) => ({
-        id: x.id, name: x.name, size: x.size, added: x.added, description: x.description || '', source: x.source || null, watch: x.watch || null,
+        id: x.id, name: x.name, size: x.size, added: x.added, description: x.description || '', source: x.source || null, watch: x.watch || null, rev: x.rev || 0,
         snippets: (ann.get(x.id)?.highlights || []).length, sections: (ann.get(x.id)?.sections || []).length,
         projects: projects.filter((p) => p.pdfs.includes(x.id)).map((p) => ({ id: p.id, name: p.name })),
       })).sort((a, b) => (b.added || 0) - (a.added || 0));

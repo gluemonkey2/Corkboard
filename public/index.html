@@ -13,7 +13,7 @@
 <header id="topbar">
   <div class="seg" id="views">
     <button data-view="projects" title="All projects">Projects</button>
-    <button data-view="read" title="Read PDFs and make snippets">Read</button>
+    <button data-view="read" title="Read sources and make snippets">Read</button>
     <button data-view="board" title="Sort snippets on a whiteboard">Board</button>
   </div>
   <button id="projName" class="proj-name" title="Back to all projects" hidden></button>
@@ -25,9 +25,10 @@
   <div class="ctx for-read">
     <button id="backBtn" class="btn" hidden title="Back to the PDF you came from">← Back</button>
     <button id="filesBtn" class="btn" title="The files of this project, in folders that you make">▤ Files</button>
-    <select id="pdfSelect" title="Open a PDF from your library"></select>
-    <button id="addPdfBtn" class="btn" title="Add PDFs, web pages, images or text files, or PDFs from the library">＋ Add</button>
-    <button id="removePdfBtn" class="btn" title="Remove the open PDF from this project, or delete it">✕ Remove</button>
+    <select id="pdfSelect" title="Open a source from your library"></select>
+    <button id="addPdfBtn" class="btn" title="Add PDFs, web pages, images or text files, a doc that you write, or sources from the library">＋ Add</button>
+    <button id="editDocBtn" class="btn" hidden title="Change the text of this doc">✎ Edit</button>
+    <button id="removePdfBtn" class="btn" title="Remove the open source from this project, or delete it">✕ Remove</button>
   </div>
   <div class="ctx for-board">
     <select id="boardSelect" title="Switch whiteboard"></select>
@@ -96,11 +97,11 @@
     <div class="lib-head">
       <div class="lib-tabs" id="libTabs">
         <button data-tab="projects" class="active">Projects</button>
-        <button data-tab="pdfs">PDF library</button>
+        <button data-tab="pdfs">Library</button>
         <button data-tab="boards">Board library</button>
       </div>
       <span class="spacer"></span>
-      <label class="btn" id="libUpload" hidden title="Add PDFs to the library, in no project">Upload PDFs…<input type="file" accept="application/pdf" multiple hidden></label>
+      <button class="btn" id="libUpload" hidden title="Add PDFs, web pages, files or a new doc to the library, in no project">＋ Add</button>
     </div>
     <div id="projGrid" class="proj-grid" data-tab="projects"></div>
     <p id="projEmpty" class="proj-empty" hidden>No projects yet. Start one with <b>＋ New project</b>, then add PDFs to it.</p>
@@ -149,10 +150,14 @@
       <button id="findClose" title="Close (Esc)">×</button>
     </div></div>
     <div id="pdfEmpty">
-      <p><b>Add a PDF</b> or drop one here.</p>
+      <p><b>Add a source</b> or drop a file here.</p>
       <p>Select text to make a snippet. Use <b>Area</b> for figures and tables. Write a note on each snippet, then sort them on the <b>Board</b>.</p>
     </div>
     <div id="hlMenu" class="hlmenu" hidden></div>
+  </div>
+  <div id="docEdit" hidden>
+    <div id="docEditBar"><span id="docEditTools"></span><span class="spacer"></span><span id="docEditState"></span><button id="docEditDone" class="btn primary" title="Save the doc and go back to the reader">Done</button></div>
+    <div id="docEditScroll"><div id="docEditPage"></div></div>
   </div>
   </div>
   <div class="grip" id="sideGrip" title="Drag to change the width · double-click for the standard width"></div>
@@ -228,6 +233,7 @@
   <div class="lib-tabs" id="apTabs">
     <button data-ap="upload" class="active">Files</button>
     <button data-ap="web">Web page</button>
+    <button data-ap="doc">New doc</button>
     <button data-ap="library">From the library</button>
   </div>
   <div class="ap-pane" data-ap="upload">
@@ -244,6 +250,13 @@
     </form>
     <p class="ap-note" id="apWebNote">The page is opened in a hidden window and saved as a PDF snapshot, with its address and the date. Then you can snip it like any PDF.</p>
     <div id="apWebList" class="ap-list"></div>
+  </div>
+  <div class="ap-pane" data-ap="doc" hidden>
+    <form id="apDocForm" class="ap-web">
+      <input id="apDocName" type="text" placeholder="The name of the doc" autocomplete="off" required>
+      <button type="submit" class="primary">Write it</button>
+    </form>
+    <p class="ap-note" id="apDocNote" hidden></p>
   </div>
   <div class="ap-pane" data-ap="library" hidden>
     <input id="apSearch" type="search" placeholder="Search the library…" autocomplete="off">
@@ -262,7 +275,8 @@
   <h3>Projects</h3>
   <ul>
     <li>A project holds its own boards and PDFs. Open one from the <b>Projects</b> view.</li>
-    <li><b>＋ Add</b> adds sources to the open project: PDFs, web pages (saved as PDF snapshots), images, HTML, text and Markdown files, or PDFs from the library. A PDF in two projects shares its snippets and sections.</li>
+    <li><b>＋ Add</b> adds sources to the open project: PDFs, web pages (saved as PDF snapshots), images, HTML, text and Markdown files, a doc that you write, or sources from the library. A source in two projects shares its snippets and sections.</li>
+    <li><b>Docs:</b> <b>＋ Add</b> → <b>New doc</b> makes a source that you write, with headings, lists, tables and equations. <b>✎ Edit</b> opens it again. Its snippets move with their words.</li>
     <li><b>Open</b> in the PDF library edits a PDF with no project: sections, snippets, notes and details. They come with the PDF into every project.</li>
     <li>Deleting a project moves it and its boards to <code>data/trash</code>. Its PDFs stay in the PDF library, unless you tick the box to trash the PDFs that only this project uses.</li>
     <li><b>PDF library</b> lists every PDF, with the projects that use it. Add a PDF to a project there, or move it to the trash.</li>

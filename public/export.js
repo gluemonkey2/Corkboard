@@ -3,7 +3,8 @@
 // branch at a time), links between cards and between words, and the terms of the dictionary.
 
 const toDataUrl = async (url) => {
-  const blob = await (await fetch(url)).blob();
+  // A doc that the user wrote gets a new PDF at each change, at the same address: take it from the server, not from the cache.
+  const blob = await (await fetch(url, /\.pdf$/.test(url) ? { cache: 'reload' } : {})).blob();
   return new Promise((res, rej) => {
     const r = new FileReader();
     r.onload = () => res(r.result);

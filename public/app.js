@@ -1,6 +1,7 @@
 import { api, uploadPdf, uploadImage, captureFile, captureWeb } from './api.js';
 import { Board, PALETTES } from './board.js';
-import { PdfView, DRAG_TYPE, snippetItem, setDragData, HL_COLORS, locateRange } from './pdfview.js';
+import { PdfView, DRAG_TYPE, snippetItem, setDragData, HL_COLORS, locateRange, setPdfRevs, relocateSnippets } from './pdfview.js';
+import { createEditor } from '/vendor/docedit/docedit.js';
 import { exportHtml } from './export.js';
 import { askText, askConfirm } from './ask.js';
 import { initAutoscroll } from './autoscroll.js';
@@ -47,6 +48,7 @@ function setView(v) {
   if (v !== 'projects' && !project) v = 'projects'; // Read and Board need an open project (or the library)
   if (v === 'board' && project?.library) { status('Boards belong to projects. Add this PDF to a project to use it on a board.'); v = 'read'; }
   if (v === 'board' && project?.kind === 'review') v = 'read'; // a review has no board
+  if (docEdit && v !== 'read') finishDocEdit().catch(fail); // a doc that is open in the editor is saved first
   document.body.dataset.view = v;
   for (const b of document.querySelectorAll('#views button')) b.classList.toggle('active', b.dataset.view === v);
   if (location.hash !== `#${v}`) history.replaceState(null, '', `#${v}`);
@@ -124,6 +126,7 @@ const pdf = new PdfView({
   },
   onFindChange: () => { if (!$('#findBar').hidden) findCount(pdf.findHits?.length || 0); },
   onOpened: (meta) => {
+    $('#editDocBtn').hidden = !isDoc(meta);
     pdf.setTermMatcher(dict.project.length || dict.global.length ? matcherFor(meta.id) : null);
     if (found && found.pdfId !== meta.id) found = null;
     renderTerms();
@@ -132,7 +135,7 @@ const pdf = new PdfView({
     if (!$('#findBar').hidden && $('#findInput').value.trim()) runFind().catch(fail); // find again in the new PDF
   },
   onPickLink: (h) => pickLink(h).catch(fail),
-  flagOf: (h) => sourceFlag(pdf.meta?.id, h.id),
+  flagOf: (h) => (h.lost ? { text: 'not in the doc now', title: 'The doc changed, and these words are not in it any more. The snippet keeps its old place.' } : sourceFlag(pdf.meta?.id, h.id)),
   onTermHover: (t, rect) => (t ? showTermTip(t, rect) : hideTermTip()),
   onDefineTerm: (p) => {
     const g = guessEntry(p.text);
@@ -148,14 +151,15 @@ const inScope = (path) => (project?.library ? path : `${path}?project=${project.
 async function loadPdfs(selectId) {
   if (!project) return;
   pdfList = await api('GET', inScope('/api/pdfs'));
+  setPdfRevs(pdfList);
   const sel = $('#pdfSelect');
-  sel.replaceChildren(new Option(pdfList.length ? '— choose a PDF —' : '— no PDFs here yet —', ''),
+  sel.replaceChildren(new Option(pdfList.length ? '— choose a source —' : '— no sources here yet —', ''),
     ...pdfList.map((p) => new Option(p.name, p.id)));
   sel.value = selectId || (pdfList.some((p) => p.id === pdf.meta?.id) ? pdf.meta.id : '');
   renderTrayFilter();
   renderFiles();
   // The global folders list every PDF in the library: keep that list current too.
-  api('GET', '/api/pdfs').then((list) => { allPdfs = list; if (scopeNow() === 'global') renderFiles(); }).catch(() => {});
+  api('GET', '/api/pdfs').then((list) => { allPdfs = list; setPdfRevs(list); if (scopeNow() === 'global') renderFiles(); }).catch(() => {});
 }
 // ---------- reader tabs ----------
 // Each tab is a view of a PDF: which PDF, and where it is scrolled to. Two tabs can show the same PDF at different
@@ -193,12 +197,15 @@ function renderTabs() {
 }
 // Show tab i: open its PDF and go to its place.
 async function showTab(i, { keep = true } = {}) {
+  if (docEdit) await finishDocEdit({ reopen: false }); // another source opens: the doc is saved first
   if (keep) keepTabPlace();
   const t = tabs[i];
   if (!t) return;
   tabAt = i;
   renderTabs();
   const meta = pdfList.find((p) => p.id === t.pdfId) || (await api('GET', '/api/pdfs')).find((p) => p.id === t.pdfId);
+  // A doc whose PDF was made again just now: the reader must not keep the pages from before.
+  if (meta) { setPdfRevs([meta]); if ((await freshDoc(meta)) && pdf.meta?.id === meta.id) pdf.close(); }
   if (!meta) { tabs.splice(i, 1); tabAt = Math.min(tabAt, tabs.length - 1); renderTabs(); saveTabs(); throw new Error('That PDF is not in the library any more.'); }
   t.name = meta.name;
   $('#pdfSelect').value = pdfList.some((p) => p.id === t.pdfId) ? t.pdfId : '';
@@ -320,7 +327,7 @@ async function loadSnippets() {
 }
 function renderTrayFilter() {
   const sel = $('#trayPdf'), keep = sel.value || store.get('corkboard.trayPdf') || '';
-  sel.replaceChildren(new Option('All PDFs in this project', ''), ...pdfList.map((p) => new Option(p.name, p.id)));
+  sel.replaceChildren(new Option('All sources in this project', ''), ...pdfList.map((p) => new Option(p.name, p.id)));
   sel.value = pdfList.some((p) => p.id === keep) ? keep : '';
   renderSectionFilter();
 }
@@ -844,7 +851,7 @@ async function deleteProject(p) {
   const own = p.pdfs.filter((x) => !shared.has(x.id));
   const ok = await askConfirm(`Delete the project “${p.name}”?`, [
     `The project and its ${boards} go to data/trash.`,
-    own.length ? 'Its PDFs stay in the PDF library unless you tick the box.' : (p.pdfs.length ? 'Its PDFs stay in the PDF library, because other projects use them.' : ''),
+    own.length ? 'Its PDFs stay in the library unless you tick the box.' : (p.pdfs.length ? 'Its PDFs stay in the library, because other projects use them.' : ''),
   ].filter(Boolean), {
     okLabel: 'Delete project', danger: true,
     checkbox: own.length ? { label: `Also move ${plural(own.length, 'PDF')} that only this project uses (${own.map((x) => x.name).join(', ')}) and their snippets to the trash`, checked: false } : null,
@@ -858,7 +865,7 @@ async function deleteProject(p) {
   status(`Deleted “${p.name}”${ok.checked ? ` and ${plural(own.length, 'PDF')}` : ''}.`, 'ok');
 }
 // Remove the open PDF: from this project (it stays in the library), or, with the box ticked, to the trash.
-// In the PDF library there is no project, so it goes to the trash.
+// In the library there is no project, so it goes to the trash.
 async function removePdfFromProject() {
   if (!pdf.meta || !project) return status('Open a PDF first. Then Remove takes it out.');
   const meta = pdf.meta;
@@ -875,7 +882,7 @@ async function removePdfFromProject() {
     trash = true;
   } else {
     const ok = await askConfirm(`Remove “${meta.name}” from “${project.name}”?`, [
-      'The PDF and its snippets stay in the PDF library, unless you tick the box. Cards already on boards stay.',
+      'The PDF and its snippets stay in the library, unless you tick the box. Cards already on boards stay.',
     ], {
       okLabel: 'Remove', danger: true,
       checkbox: { label: `Also delete the PDF: move it and its ${plural(n, 'snippet')} to the trash${others.length ? ` (it also leaves ${others.join(', ')})` : ''}`, checked: false },
@@ -891,7 +898,7 @@ async function removePdfFromProject() {
   await loadSnippets();
   post({ type: 'pdfs' });
   post({ type: 'projects' });
-  status(trash ? `Moved “${meta.name}” to the trash.` : `Removed “${meta.name}” from “${project.name}”. It is still in the PDF library.`, 'ok');
+  status(trash ? `Moved “${meta.name}” to the trash.` : `Removed “${meta.name}” from “${project.name}”. It is still in the library.`, 'ok');
 }
 
 // A small drawing of a project's newest board: card boxes in their colours, and the links.
@@ -985,6 +992,7 @@ function showLibTab(tab) {
 async function refreshLibrary() {
   if (libTab === 'pdfs') {
     [pdfLibrary, gfiles] = await Promise.all([api('GET', '/api/library/pdfs'), api('GET', '/api/files/global').catch(() => gfiles)]);
+    setPdfRevs(pdfLibrary);
     renderPdfLibrary();
   }
   if (libTab === 'boards') { boardLibrary = await api('GET', '/api/library/boards'); renderBoardLibrary(); }
@@ -995,7 +1003,7 @@ function projectChip(p, onOpen) {
   c.onclick = onOpen;
   return c;
 }
-// The PDF library tab is the global folder browser: the global folders with every PDF of the library. A click
+// The library tab is the global folder browser: the global folders with every PDF of the library. A click
 // on a file opens it by itself, outside any project, to read it and to make snippets. A right-click has the
 // other actions.
 function renderPdfLibrary() {
@@ -1039,6 +1047,7 @@ function libFileMenu(x, px, py) {
   const others = projectList.filter((p) => !x.projects.some((u) => u.id === p.id));
   popMenu([
     ['Open', () => openStandalone(x.id).catch(fail)],
+    ...(isDoc(x) ? [['✎ Edit the doc', async () => { await openStandalone(x.id); await startDocEdit(); }]] : []),
     ...x.projects.slice(0, 6).map((p) => [`Open in “${p.name}”`, () => { store.set(`corkboard.pdf.${p.id}`, x.id); openProject(p.id, 'read').catch(fail); }]),
     null,
     ...others.slice(0, 10).map((p) => [`＋ Add to “${p.name}”`, () => libAddTo(x, p.id).catch(fail)]),
@@ -1123,7 +1132,7 @@ async function openAddPdf({ tab = 'upload', targetId = project && !project.libra
   apTargetId = targetId;
   apPicked = new Set();
   const target = projectList.find((p) => p.id === targetId);
-  $('#apTarget').textContent = target ? `to “${target.name}”` : 'to the PDF library';
+  $('#apTarget').textContent = target ? `to “${target.name}”` : 'to the library';
   $('#apTabs [data-ap="library"]').hidden = !target;
   $('#apUploads').replaceChildren();
   $('#apSearch').value = '';
@@ -1133,11 +1142,16 @@ async function openAddPdf({ tab = 'upload', targetId = project && !project.libra
   // Web pages and other files need the desktop app.
   const canCapture = !!(await api('GET', '/api/info').catch(() => ({}))).capture;
   $('#apWebForm').hidden = !canCapture;
+  $('#apDocForm').hidden = !canCapture;
+  $('#apDocNote').hidden = canCapture;
+  $('#apDocNote').textContent = 'A doc can be written in the desktop app only.';
+  $('#apDocName').value = '';
   $('#apWebNote').textContent = canCapture
     ? 'The page is opened in a hidden window and saved as a PDF snapshot, with its address and the date. Then you can snip it like any PDF.'
     : 'Web pages, images and text files can be added in the desktop app only. Here, only PDFs can be added.';
-  apShow(target ? tab : 'upload');
+  apShow(target || tab !== 'library' ? tab : 'upload');
   $('#addPdfDialog').showModal();
+  if (tab === 'doc') $('#apDocName').focus();
 }
 // The "From the library" tab is the global folder browser: the global folders with every PDF of the library.
 // Tick files, or a folder for all the files in it. A PDF that is in the project already shows as such.
@@ -1234,6 +1248,16 @@ $('#apWebForm').onsubmit = async (e) => {
     state.title = err.message;
     $('#apInfo').textContent = err.message;
   }
+};
+// A doc: a source that you write here. It opens at once, with the editor.
+$('#apDocForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const name = $('#apDocName').value.trim();
+  if (!name) return;
+  try {
+    $('#addPdfDialog').close();
+    await newDoc(name, apTargetId);
+  } catch (err) { fail(err); }
 };
 async function afterPdfsAdded(openId) {
   post({ type: 'pdfs' });
@@ -1682,7 +1706,7 @@ $('#backBtn').onclick = async () => {
 };
 
 // ---------- standalone PDFs (no project) ----------
-const LIBRARY = { id: null, library: true, name: 'PDF library', pdfs: [], boards: [], cards: 0 };
+const LIBRARY = { id: null, library: true, name: 'Library', pdfs: [], boards: [], cards: 0 };
 async function openStandalone(pdfId) {
   await save();
   const fresh = project !== LIBRARY;
@@ -2020,6 +2044,101 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('themechange', () => board.retheme());
 board.guides = store.get('corkboard.guides') !== '0'; // guides while you move or size a card: on unless turned off
 // ---------- the Files panel: the sources of the project in folders ----------
+// ---------- docs: sources that the user writes ----------
+// A doc is a source like a PDF or a web page: it is in the library, in folders and in projects, and the reader
+// shows it as pages, so snippets, sections and links work. Its text is a document of the note-card editor
+// (docedit). "✎ Edit" puts the editor in the place of the pages. "Done" saves the document, the server makes
+// the PDF again, and the snippets of the doc are found again in the new pages.
+let docEdit = null; // { id, ed, dirty, changed, timer, page } while a doc is open in the editor
+const isDoc = (meta) => meta?.source?.kind === 'doc';
+const kindIcon = (p) => (isDoc(p) ? '📝' : p.source?.kind === 'web' ? '🌐' : /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(p.source?.original || '') ? '🖼' : '📄');
+async function newDoc(name, targetId) {
+  status('Making the doc…');
+  const meta = await api('POST', '/api/docs', { name, project: targetId || '' });
+  setPdfRevs([meta]);
+  apTargetId = targetId || null;
+  await afterPdfsAdded(null);
+  if (document.body.dataset.view === 'projects' || !project || (targetId && project.id !== targetId)) await openStandalone(meta.id);
+  else { setView('read'); await openPdf(meta.id); }
+  status('');
+  await startDocEdit();
+}
+// A doc whose PDF is older than its text (the app closed during an edit): make the PDF now.
+async function freshDoc(meta) {
+  if (!isDoc(meta) || !meta.source.draft || docEdit) return false;
+  try {
+    const m = await api('PUT', `/api/docs/${meta.id}`, { render: true });
+    Object.assign(meta, m);
+    setPdfRevs([m]);
+    await relocateSnippets(m.id);
+    return true;
+  } catch { return false; } // the browser version can not make the PDF: the reader shows the PDF from before
+}
+async function startDocEdit() {
+  const meta = pdf.meta;
+  if (!isDoc(meta) || docEdit) return;
+  if (!(await api('GET', '/api/info').catch(() => ({}))).capture) return status('A doc can be changed in the desktop app only.', 'err');
+  const { doc } = await api('GET', `/api/docs/${meta.id}`);
+  if (pdf.meta !== meta || docEdit) return;
+  const state = { id: meta.id, ed: null, dirty: false, changed: false, timer: 0, page: pdf.currentPage() };
+  $('#readMain').classList.add('doc-editing');
+  $('#docEdit').hidden = false;
+  $('#docEditState').textContent = '';
+  state.ed = createEditor($('#docEditPage'), {
+    doc, placeholder: 'Write the doc…',
+    onChange: () => {
+      state.dirty = true;
+      $('#docEditState').textContent = '';
+      clearTimeout(state.timer);
+      state.timer = setTimeout(() => saveDocDraft(state).catch(fail), 1500);
+    },
+  });
+  $('#docEditTools').replaceChildren(state.ed.toolbar);
+  docEdit = state;
+  $('#editDocBtn').hidden = true;
+  state.ed.focus('end');
+}
+// While you write, the text is saved as a draft (the PDF is not made again until Done).
+async function saveDocDraft(state) {
+  if (!state.dirty) return;
+  state.dirty = false;
+  state.changed = true;
+  await api('PUT', `/api/docs/${state.id}`, { doc: state.ed.getDoc(), render: false });
+  if (docEdit === state) $('#docEditState').textContent = 'Draft saved';
+}
+// End the edit. reopen: show the new pages in the reader (false when another source opens next).
+async function finishDocEdit({ reopen = true } = {}) {
+  const d = docEdit;
+  if (!d) return;
+  docEdit = null;
+  clearTimeout(d.timer);
+  const doc = d.ed.getDoc(), changed = d.changed || d.dirty;
+  d.ed.destroy();
+  $('#docEditPage').replaceChildren();
+  $('#docEditTools').replaceChildren();
+  $('#docEdit').hidden = true;
+  $('#readMain').classList.remove('doc-editing');
+  $('#editDocBtn').hidden = !isDoc(pdf.meta);
+  if (!changed) return;
+  status('Saving the doc…');
+  const meta = await api('PUT', `/api/docs/${d.id}`, { doc, render: true });
+  setPdfRevs([meta]);
+  const moved = await relocateSnippets(d.id);
+  post({ type: 'pdfs' });
+  post({ type: 'snippets' });
+  const open = pdf.meta?.id === d.id;
+  if (open) pdf.close(); // the reader has the pages from before: it must load the new ones
+  await loadPdfs();
+  if (open && reopen) { await showTab(tabAt, { keep: false }); pdf.goTo(Math.min(d.page, pdf.pages.length || 1)); }
+  await loadSnippets();
+  if (inLibraryTab()) await refreshLibrary();
+  status(moved.lost ? `Doc saved. The words of ${plural(moved.lost, 'snippet')} are not in the doc now.` : 'Doc saved', moved.lost ? 'err' : 'ok');
+}
+$('#editDocBtn').onclick = () => startDocEdit().catch(fail);
+$('#docEditDone').onclick = () => finishDocEdit().catch(fail);
+// A click on the page below the text puts the cursor at the end of the text.
+$('#docEditPage').addEventListener('mousedown', (e) => { if (e.target === e.currentTarget && docEdit) { e.preventDefault(); docEdit.ed.focus('end'); } });
+
 // A project has folders of its own for its PDFs (files.folders: [{ id, name, parent }], files.filed: { pdfId:
 // folderId }). A PDF that is in no folder is at the top. The folders are a way to find things in this project:
 // nothing moves on the disk, and another project can file the same PDF in another way.
@@ -2027,7 +2146,7 @@ board.guides = store.get('corkboard.guides') !== '0'; // guides while you move o
 // project (gfiles, kept in data/files.json). The panel shows one of the two: Project or Global.
 let files = { folders: [], filed: {} }, gfiles = { folders: [], filed: {} }, allPdfs = [];
 let fileScope = store.get('corkboard.fileScope') === 'global' ? 'global' : 'project';
-// With no project open, and in the PDF library tab of the Projects view: only the global folders.
+// With no project open, and in the library tab of the Projects view: only the global folders.
 const inLibraryTab = () => document.body.dataset.view === 'projects';
 const scopeNow = () => (inLibraryTab() || !hasProject() ? 'global' : fileScope);
 const F = () => (scopeNow() === 'global' ? gfiles : files);
@@ -2122,7 +2241,7 @@ function fileTree(tree, { list, q, onOpen, onMenu, sub, again }) {
       row.draggable = true;
       row.title = grey(p) ? `${p.name} (not in this project)` : p.name;
       const flag = sourceFlag(p.id);
-      row.append(mk('span', 'fp-caret', ''), mk('span', 'fp-icon', p.source?.kind === 'web' ? '🌐' : '📄'), mk('span', 'fp-name', p.name));
+      row.append(mk('span', 'fp-caret', ''), mk('span', 'fp-icon', kindIcon(p)), mk('span', 'fp-name', p.name));
       if (sub) row.append(mk('span', 'fp-sub', sub(p)));
       if (flag) row.append(Object.assign(mk('span', 'fp-warn', '⚠'), { title: flag.title }));
       row.onclick = () => onOpen(p);
@@ -2134,7 +2253,7 @@ function fileTree(tree, { list, q, onOpen, onMenu, sub, again }) {
   walk(null, 0);
   tree.replaceChildren(...(rows.length ? rows : [mk('p', 'fp-empty', q ? 'No files match.' : 'No files.')]));
 }
-// Draw the folders where they show: the Files panel of the reader, or the PDF library tab of the Projects view.
+// Draw the folders where they show: the Files panel of the reader, or the library tab of the Projects view.
 function renderFiles() {
   if (inLibraryTab()) { if (libTab === 'pdfs') renderPdfLibrary(); return; }
   if (!$('#fpTree')) return;
@@ -2214,6 +2333,7 @@ function fileMenu(p, x, y) {
   popMenu([
     ['Open', () => openPdf(p.id, 0, null, { here: true }).catch(fail)],
     ['Open in a new tab', async () => { await newTab(); await openPdf(p.id, 0, null, { here: true }); }],
+    ...(isDoc(p) ? [['✎ Edit the doc', async () => { await openPdf(p.id, 0, null, { here: true }); await startDocEdit(); }]] : []),
     ['✎ Rename', () => renamePdf(p).catch(fail)],
     ['＋ New folder here', () => newFolder(here).catch(fail)],
     ...(outside ? [['＋ Add to this project', async () => {
@@ -2242,13 +2362,14 @@ async function renamePdf(p) {
   if (inLibraryTab()) await refreshLibrary();
   if (sideTab === 'details') renderDetails().catch(fail);
 }
-// A right-click on the empty part of the panel (or of the PDF library tab): a new folder at the top.
+// A right-click on the empty part of the panel (or of the library tab): a new folder at the top.
 for (const zone of [$('#filesPane'), $('#pdfLib')]) {
   zone.addEventListener('contextmenu', (e) => {
     if (e.target.closest('.fp-row, input, button')) return;
     e.preventDefault();
     popMenu([
       ['＋ New folder', () => newFolder(null).catch(fail)],
+      ['＋ New doc', async () => { const name = await askText('New doc', '', { okLabel: 'Write it', placeholder: 'The name of the doc' }); if (name) await newDoc(name, inLibraryTab() || !hasProject() ? null : project.id); }],
       ...(scopeNow() === 'global' ? [['⤓ Snapshot a folder from the disk…', () => snapshotFolder().catch(fail)]] : []),
     ], e.clientX, e.clientY);
   });
@@ -2273,7 +2394,7 @@ $('#filesBtn').onclick = () => showFiles($('#filesPane').hidden);
 $('#fpNew').onclick = () => newFolder(null).catch(fail);
 $('#fpFilter').oninput = () => renderFiles();
 $('#fpScope').onclick = (e) => { const s = e.target.closest('button')?.dataset.scope; if (s) setFileScope(s); };
-// A drop on the panel (or on the PDF library tab), not on a folder: to the top.
+// A drop on the panel (or on the library tab), not on a folder: to the top.
 for (const zone of [$('#filesPane'), $('#pdfLib')]) {
   zone.addEventListener('dragover', (e) => { if ([...e.dataTransfer.types].includes(FILE_DRAG)) { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move'; } });
   zone.addEventListener('drop', (e) => {

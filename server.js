@@ -20,6 +20,7 @@ const DIRS = {
   projects: path.join(DATA, 'projects'),
   exports: path.join(DATA, 'exports'),
   terms: path.join(DATA, 'terms'),
+  docs: path.join(DATA, 'docs'), // docs that the user wrote: the document itself (the reader shows a PDF made from it)
 };
 for (const d of Object.values(DIRS)) fs.mkdirSync(d, { recursive: true });
 const PDFJS = path.dirname(require.resolve('pdfjs-dist/package.json'));
@@ -335,6 +336,51 @@ async function handleApi(req, res, parts, query) {
     }
   }
 
+  // Docs: a source that the user writes in Corkboard. The document is JSON (the docedit format) in data/docs.
+  // The library holds a PDF made from it, so the reader, snippets and links work as for every source. The id
+  // of a doc stays the same when its text changes (a PDF that was added has the hash of its content as its id).
+  //   POST /api/docs {name, project}   a new, empty doc
+  //   GET  /api/docs/<id>              { doc, meta }
+  //   PUT  /api/docs/<id> {doc, render}  save the document. render: make the PDF again (else it is a draft).
+  if (kind === 'docs') {
+    const printDoc = (docId) => capture.printDoc(`http://127.0.0.1:${PORT}/print/doc/${docId}`);
+    try {
+      if (!id && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        const name = String(body.name || '').replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 150) || 'Untitled doc';
+        const docId = crypto.randomBytes(12).toString('hex');
+        await writeAtomic(path.join(DIRS.docs, `${docId}.json`), JSON.stringify({ type: 'doc', content: [{ type: 'paragraph' }] }));
+        let pdf;
+        try { pdf = await printDoc(docId); } catch (e) { await fsp.rm(path.join(DIRS.docs, `${docId}.json`), { force: true }); throw e; }
+        const meta = { id: docId, name, size: pdf.length, added: Date.now(), rev: 1, source: { kind: 'doc', edited: Date.now() } };
+        await writeAtomic(path.join(DIRS.pdfs, `${docId}.pdf`), pdf);
+        await writeAtomic(path.join(DIRS.pdfs, `${docId}.json`), JSON.stringify(meta));
+        if (ID.test(String(body.project || ''))) await projects.add(body.project, 'pdfs', docId);
+        return json(res, 201, meta);
+      }
+      const file = id && ID.test(id) ? path.join(DIRS.docs, `${id}.json`) : null, metaFile = file && path.join(DIRS.pdfs, `${id}.json`);
+      if (!file || !(await exists(file)) || !(await exists(metaFile))) return json(res, 404, { error: 'no such doc' });
+      const meta = JSON.parse(await fsp.readFile(metaFile, 'utf8'));
+      if (req.method === 'GET') return json(res, 200, { doc: JSON.parse(await fsp.readFile(file, 'utf8')), meta });
+      if (req.method === 'PUT') {
+        const body = JSON.parse((await readBody(req, 20e6)).toString() || '{}');
+        if (body.doc && body.doc.type === 'doc') await writeAtomic(file, JSON.stringify(body.doc));
+        meta.source = { ...(meta.source || {}), kind: 'doc', edited: Date.now() };
+        if (body.render) {
+          const pdf = await printDoc(id);
+          await writeAtomic(path.join(DIRS.pdfs, `${id}.pdf`), pdf);
+          meta.size = pdf.length;
+          meta.rev = (meta.rev || 0) + 1; // the address of the PDF changes with it, so no old copy shows
+          delete meta.source.draft;
+        } else meta.source.draft = true; // the PDF is older than the document
+        await writeAtomic(metaFile, JSON.stringify(meta));
+        return json(res, 200, meta);
+      }
+    } catch (e) {
+      return json(res, e.status || 500, { error: e.message });
+    }
+  }
+
   // Snapshots: a web page (POST /api/capture/web {url, project}) or a file that is not a PDF
   // (POST /api/capture/file, the file as the body) becomes a PDF in the library. Desktop app only.
   if (kind === 'capture' && req.method === 'POST' && (id === 'web' || id === 'file')) {
@@ -568,6 +614,35 @@ async function handleApi(req, res, parts, query) {
   return json(res, 404, { error: 'not found' });
 }
 
+// The page that draws a doc for print: the document editor draws the JSON, on A4 pages.
+async function printPage(res, id) {
+  const file = ID.test(id) ? path.join(DIRS.docs, `${id}.json`) : null;
+  if (!file || !(await exists(file))) return json(res, 404, { error: 'no such doc' });
+  const data = (await fsp.readFile(file, 'utf8')).replace(/</g, '\\u003c');
+  const html = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Doc</title>
+<link rel="stylesheet" href="/vendor/docedit/docedit.css">
+<style>
+  @page { size: A4; margin: 20mm 18mm; }
+  html, body { margin: 0; background: #fff; }
+  body { font: 11pt/1.5 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color: #111; }
+  .de-doc { --de-ink: #111; --de-muted: #555; --de-line: #999; --de-fill: #f0f0f0; --de-panel: #fff; --de-accent: #1a5fd0; }
+  .de-doc p { min-height: 1.5em; }
+  .de-doc h1, .de-doc h2, .de-doc h3 { break-after: avoid; }
+  .de-doc tr, .de-doc li, .de-doc blockquote { break-inside: avoid; }
+</style></head>
+<body><div id="doc"></div>
+<script type="application/json" id="data">${data}</script>
+<script type="module">
+  import { renderDoc } from '/vendor/docedit/docedit.js';
+  renderDoc(document.getElementById('doc'), JSON.parse(document.getElementById('data').textContent));
+  (document.fonts ? document.fonts.ready : Promise.resolve()).then(() => { document.documentElement.dataset.ready = '1'; });
+</script>
+</body></html>`;
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+  res.end(html);
+}
+
 const server = http.createServer(async (req, res) => {
   try {
     const p = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
@@ -575,6 +650,7 @@ const server = http.createServer(async (req, res) => {
       return await handleApi(req, res, p.split('/').filter(Boolean).slice(1), new URL(req.url, 'http://localhost').searchParams);
     }
     if (p.startsWith('/vendor/pdfjs/')) return serve(res, safeJoin(PDFJS, p.slice(14)), 'public, max-age=86400');
+    if (p.startsWith('/print/doc/')) return await printPage(res, p.slice(11));
     if (p.startsWith('/files/pdfs/') && p.endsWith('.pdf')) return serve(res, safeJoin(DIRS.pdfs, p.slice(12)), IMMUTABLE);
     if (p.startsWith('/files/images/')) return serve(res, safeJoin(DIRS.images, p.slice(14)), IMMUTABLE);
     if (p.startsWith('/files/exports/')) return serve(res, safeJoin(DIRS.exports, p.slice(15)), 'no-cache');

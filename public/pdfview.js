@@ -20,11 +20,90 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const uid = () => crypto.randomUUID().slice(0, 8);
 
 // ---------- words of a snippet, found on the page (for marking words on a board card) ----------
+// A doc that the user wrote gets a new PDF each time its text changes. Its revision number goes in the address
+// of the PDF, so the browser does not show an old copy.
+const revs = new Map();
+export function setPdfRevs(list) { for (const p of list || []) if (p.rev) revs.set(p.id, p.rev); }
+export const pdfUrl = (pdfId) => `/files/pdfs/${pdfId}.pdf${revs.get(pdfId) ? `?v=${revs.get(pdfId)}` : ''}`;
 const docs = new Map();
+function docOf(pdfId) {
+  const key = `${pdfId}@${revs.get(pdfId) || 0}`;
+  if (!docs.has(key)) docs.set(key, pdfjsLib.getDocument({ url: pdfUrl(pdfId), ...DOC_OPTS }).promise);
+  return docs.get(key);
+}
 async function pageText(pdfId, n) {
-  if (!docs.has(pdfId)) docs.set(pdfId, pdfjsLib.getDocument({ url: `/files/pdfs/${pdfId}.pdf`, ...DOC_OPTS }).promise);
-  const page = await (await docs.get(pdfId)).getPage(n);
+  const page = await (await docOf(pdfId)).getPage(n);
   return page.getTextContent();
+}
+
+// ---------- a doc changed: find its snippets and sections again in the new PDF ----------
+// Letters and digits only, in lower case: line ends, spaces and punctuation do not matter for a match.
+const plainKey = (ch) => ch.normalize('NFKD').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+// Each text snippet of the PDF is found again by its words, at the place nearest to where it was. A snippet
+// whose words are not there any more keeps its place and gets `lost: true`. Area snippets keep their place.
+// Returns { moved, lost }.
+export async function relocateSnippets(pdfId) {
+  const annots = await api('GET', `/api/annotations/${pdfId}`);
+  const marks = (annots.highlights || []).filter((h) => h.kind === 'text' && !h.image && h.text);
+  const sections = annots.sections || [];
+  if (!marks.length && !sections.length) return { moved: 0, lost: 0 };
+  const doc = await docOf(pdfId);
+  // Every letter of the document with its page and its box, in reading order.
+  const chars = [];
+  for (let n = 1; n <= doc.numPages; n++) {
+    const tc = await (await doc.getPage(n)).getTextContent();
+    for (const it of tc.items) {
+      if (!it.str) continue;
+      const [a, b, c, d, e, f] = it.transform, len = it.str.length;
+      const flat = b === 0 && c === 0 && it.width > 0, size = it.height || Math.hypot(c, d) || Math.hypot(a, b) || 10;
+      for (let i = 0; i < len; i++) {
+        const k = plainKey(it.str[i]);
+        if (!k) continue;
+        const box = flat ? [e + (i * it.width) / len, f - size * 0.22, e + ((i + 1) * it.width) / len, f + size * 0.88] : null;
+        for (const one of k) chars.push({ ch: one, n, box });
+      }
+    }
+  }
+  const text = chars.map((x) => x.ch).join('');
+  const rectsOf = (from, to) => {
+    const rects = [];
+    for (const x of chars.slice(from, to)) {
+      if (!x.box) continue;
+      const last = rects[rects.length - 1];
+      if (last && last[0] === x.n && Math.abs(last[2] - x.box[1]) < 2 && x.box[0] >= last[1] - 1) { last[3] = Math.max(last[3], x.box[2]); last[4] = Math.max(last[4], x.box[3]); }
+      else rects.push([x.n, ...x.box]);
+    }
+    return rects.map((r) => r.map((v, i) => (i ? Math.round(v * 100) / 100 : v)));
+  };
+  // The match nearest to the old place: the page first, then the height on the page.
+  const nearest = (key, page, y) => {
+    let best = -1, bestD = Infinity;
+    for (let i = text.indexOf(key); i >= 0; i = text.indexOf(key, i + 1)) {
+      const c = chars[i], d = Math.abs(c.n - page) * 10000 + (c.box && y != null ? Math.abs(c.box[3] - y) : 0);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    return best;
+  };
+  let moved = 0, lost = 0;
+  for (const h of marks) {
+    const key = [...h.text].map(plainKey).join('');
+    const at = key ? nearest(key, h.page || h.rects?.[0]?.[0] || 1, h.rects?.[0]?.[4]) : -1;
+    const rects = at >= 0 ? rectsOf(at, at + key.length) : [];
+    if (!rects.length) { if (!h.lost) lost++; h.lost = true; continue; }
+    if (JSON.stringify(rects) !== JSON.stringify(h.rects)) moved++;
+    h.rects = rects;
+    h.page = rects[0][0];
+    delete h.lost;
+  }
+  for (const sec of sections) {
+    const key = [...(sec.title || '')].map(plainKey).join('');
+    const at = key.length >= 3 ? nearest(key, sec.page, sec.y) : -1;
+    if (at < 0 || !chars[at].box) continue;
+    sec.page = chars[at].n;
+    sec.y = Math.round((chars[at].box[3] + 2) * 100) / 100;
+  }
+  await api('PUT', `/api/annotations/${pdfId}`, annots);
+  return { moved, lost };
 }
 // The page boxes of outer.text.slice(start, end), as snippet rects ([page, x0, y0, x1, y1] per line), or null.
 // The words are found in the outer snippet's lines. A word that occurs more than once is matched by its count.
@@ -277,7 +356,7 @@ export class PdfView {
     let doc, annots;
     try {
       [doc, annots] = await Promise.all([
-        (this.task = pdfjsLib.getDocument({ url: `/files/pdfs/${meta.id}.pdf`, ...DOC_OPTS })).promise,
+        (this.task = pdfjsLib.getDocument({ url: pdfUrl(meta.id), ...DOC_OPTS })).promise,
         api('GET', `/api/annotations/${meta.id}`),
       ]);
     } catch (e) {

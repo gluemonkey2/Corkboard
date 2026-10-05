@@ -43,6 +43,26 @@ async function print(url, { timeout = 45000 } = {}) {
   }
 }
 
+// A doc that the user wrote in Corkboard: the server gives a page that draws it (GET /print/doc/<id>), and this
+// prints that page. The page says when it is drawn, so the wait is short.
+async function printDoc(url) {
+  if (!available()) throw Object.assign(new Error('Docs can be made and changed in the desktop app only.'), { status: 501 });
+  const { BrowserWindow } = electron;
+  const win = new BrowserWindow({ show: false, width: 900, height: 1200, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } });
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  try {
+    await Promise.race([win.loadURL(url), wait(20000).then(() => { throw new Error('The doc took too long to draw.'); })]);
+    for (let i = 0; i < 100; i++) {
+      if (await win.webContents.executeJavaScript('document.documentElement.dataset.ready || ""').catch(() => '')) break;
+      await wait(50);
+    }
+    await wait(120); // fonts and equations settle
+    return Buffer.from(await win.webContents.printToPDF({ printBackground: true, preferCSSPageSize: true }));
+  } finally {
+    win.destroy();
+  }
+}
+
 // A web page, by its address.
 async function captureUrl(url) {
   if (!available()) throw Object.assign(new Error('Web pages can be added in the desktop app only.'), { status: 501 });
@@ -124,4 +144,4 @@ function signIn(url) {
   return { ok: true };
 }
 
-module.exports = { available, captureUrl, captureFile, pageText, signIn };
+module.exports = { available, captureUrl, captureFile, printDoc, pageText, signIn };
